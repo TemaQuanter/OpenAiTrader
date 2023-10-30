@@ -1,0 +1,22 @@
+[package]
+name = "trading_bot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64 = "0.21.4"
+chatgpt_rs = "1.2.3"
+crypto-botters = { version = "0.5.1", features = ["bybit"] }
+dotenv = "0.15.0"
+flexi_logger = "0.27.0"
+grammers-client = "0.4.0"
+grammers-session = "0.4.0"
+log = "0.4.20"
+rust_decimal = "1.32.0"
+rust_decimal_macros = "1.32.0"
+serde = "1.0.188"
+serde_json = "1.0.107"
+teloxide = { version = "0.12.2", features = ["macros"] }
+tokio = { version = "1.32.0", features = ["full"] }

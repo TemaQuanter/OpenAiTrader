@@ -1,0 +1,8 @@
+/target
+
+# Secrets for the bot
+/secrets
+/data
+
+# Environmental variables
+.env

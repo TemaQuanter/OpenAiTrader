@@ -1,0 +1,9 @@
+# Files from local compilation of the project.
+target/
+**/*.rs.bk
+
+# VS Code files.
+.vscode/
+
+# Some secret information.
+secrets/
