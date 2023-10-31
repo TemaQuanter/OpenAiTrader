@@ -85,7 +85,7 @@ def check_errors(dataset: List[Dict]) -> bool:
 
 
 # Path to a dataset.
-data_path = "datasets/dataset1.jsonl"
+data_path = "datasets/dataset_test.jsonl"
 
 # Load dataset.
 dataset = load_dataset(data_path)

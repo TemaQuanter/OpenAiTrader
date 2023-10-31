@@ -1,0 +1,35 @@
+.block_title {
+    font-weight: bolder;
+    font-size: 1.5em;
+    text-align: center;
+}
+
+.request {
+    font-weight: bold;
+}
+
+.user {
+    background-color: blanchedalmond;
+}
+
+.response {
+    font-weight: bold;
+}
+
+.assistant {
+    background-color: cornsilk;
+}
+
+pre {
+    padding: 15px;
+}
+
+button {
+    padding: 10px;
+}
+
+div {
+    margin: 50px 30px;
+    padding: 25px;
+    border: 2px solid gainsboro;
+}
