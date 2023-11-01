@@ -4,9 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
+    <script>
+        // Fetch data from the server before the page loads
+        document.addEventListener("DOMContentLoaded", fetchData);
+
+        function fetchData() {
+            fetch("http://0.0.0.0:9090/get_data")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Network response was not ok");
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Use the fetched data here, e.g., update the DOM, store in a variable, etc.
+
+                // Get all assistant replies.
+                const assistantReplies = document.getElementsByClassName("assistant");
+
+                // Traverse each assistant reply and replace it with the most
+                // recent one.
+
+                for (let i = 0; i < assistantReplies.length; i++) {
+                    // Replace the content.
+                    assistantReplies[i].innerHTML = data.responses[i];
+
+                    console.log(data.responses[i]);
+                } // end for
+
+                console.log(data);
+            })
+            .catch(error => {
+                console.log("There was a problem with the fetch operation:", error.message);
+            });
+        }
+    </script>
     <link rel="stylesheet" href="dataset.css" type="text/css">
 </head>
 <body>
+    <form id="dataset_form" action="http://0.0.0.0:9090/save_changes" method="POST">
+    </form>
     <script src="script.js" type="text/javascript"></script>
 </body>
 </html>

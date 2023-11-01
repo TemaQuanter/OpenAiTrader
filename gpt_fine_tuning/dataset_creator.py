@@ -152,10 +152,12 @@ with open("html/dataset.html", "w") as f:
         boilerplate_code = boilerplate_f.readlines()
 
     # Write each example in a formatted way.
-    f.writelines(boilerplate_code[:-3])
+    f.writelines(boilerplate_code[:-4])
     for i, ex in enumerate(resulting_dataset):
         f.write(f"<p class=\"block_title\">Example #{i + 1}</p>\n")
         f.write("<div class=\"block\">\n")
+        # f.write(
+        #     "<form action=\"http://0.0.0.0:9090/save_changes\" method=\"POST\" onsubmit=\"prepareFormSubmission()\">\n")
         f.write("<p class=\"request\">Request</p>\n")
         f.write(
             f"<pre class=\"user\">{ex['messages'][2]['content']}</pre>\n")
@@ -163,6 +165,9 @@ with open("html/dataset.html", "w") as f:
         f.write(
             f"<pre class=\"assistant\" contenteditable=\"true\">{ex['messages'][3]['content']}</pre>\n")
         f.write(
-            "<button onclick=\"saveChanges()\">Save All Changes to HTML File</button>")
+            f"<input type=\"hidden\" class=\"hiddenInput\" name=\"response_{i + 1}\">\n")
+        f.write(
+            "<button type=\"submit\">Save All changes</button>")
+        # f.write("</form>\n")
         f.write("</div>\n")
-    f.writelines(boilerplate_code[-3:])
+    f.writelines(boilerplate_code[-4:])

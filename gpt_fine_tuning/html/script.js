@@ -1,29 +1,51 @@
-// This function saves a new modified html file.
-function saveChanges() {
-  // Capture the entire modified HTML content
-  const entirePageContent =
-    "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+// This function prepares the data for submission to a local server.
+function prepareFormSubmission() {
+  // Capture all contenteditable elements with the class "assistant"
+  const editables = document.getElementsByClassName("assistant");
+  const associatedHiddenInputs = document.getElementsByClassName("hiddenInput");
 
-  // Create a Blob from the content
-  const blob = new Blob([entirePageContent], { type: "text/html" });
+  // Loop through each contenteditable element
+  for (let i = 0; i < editables.length; i++) {
+    // Capture content from the current contenteditable element
+    const content = editables[i].innerText;
 
-  // Create an Object URL for the Blob
-  const url = URL.createObjectURL(blob);
+    // Set the content to the associated hidden input
+    associatedHiddenInputs[i].value = content;
+  } // end for
+} // end function prepareFormSubmission
 
-  // Create a temporary anchor element for the download
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "modified_dataset.html"; // Name of the downloaded file
-  document.body.appendChild(a);
+document
+  .getElementById("dataset_form")
+  .addEventListener("submit", function (e) {
+    // Prevent the form's default submission
+    e.preventDefault();
 
-  // Trigger a click event on the anchor element to initiate the download
-  a.click();
+    // First, prepare the form data by copying contenteditable contents to hidden inputs
+    prepareFormSubmission();
 
-  // Clean up
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+    // Create an object to store form data
+    let formData = {
+      responses: [],
+    };
 
-  alert(
-    "Please replace the original file with the downloaded one to save changes."
-  );
-}
+    // Populate formData object with form's data
+    new FormData(e.target).forEach((value, key) => {
+      formData.responses.push(value);
+      console.log(key);
+      console.log(value);
+    });
+
+    // Convert formData to JSON
+    let jsonData = JSON.stringify(formData);
+
+    // Use Fetch API to send a POST request with JSON payload
+    fetch("http://0.0.0.0:9090/save_changes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: jsonData,
+    }).catch((error) => {
+      console.error("Error:", error);
+    });
+  });
