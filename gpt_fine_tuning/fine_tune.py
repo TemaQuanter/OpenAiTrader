@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import base64
 
 # Path to the dataset to train the model on.
-DATASET_PATH = "datasets/dataset1.jsonl"
+DATASET_PATH = "datasets/dataset.jsonl"
 
 # Import environmental variables from .env file into the module.
 load_dotenv()
@@ -17,10 +17,19 @@ openai.api_key = base64.b64decode(os.getenv("OPENAI_API_KEY")).decode('utf-8')
 # Upload the training data to the server.
 file_upload_response = openai.File.create(
     file=open(DATASET_PATH, "rb"),
-    purpose='fine-tune'
+    purpose="fine-tune",
+    user_provided_filename="dataset"
 )
 
+# Display information about uploaded file.
 print(file_upload_response)
 
+# Get the file ID of a training file on the server.
+training_file = file_upload_response["id"]
+
 # Create a fine-tuning job.
-# openai.FineTuningJob.create(training_file="file-abc123", model="gpt-3.5-turbo")
+fine_tuning_job_response = openai.FineTuningJob.create(
+    training_file=training_file, model="gpt-3.5-turbo")
+
+# Display information about fine-tuning job.
+print(fine_tuning_job_response)

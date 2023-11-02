@@ -2,7 +2,6 @@
 // with a user via Telegram bot.
 
 use rust_decimal::Decimal;
-use tokio::sync::mpsc::Sender;
 
 use teloxide::{
     payloads::SendMessageSetters,
@@ -14,7 +13,7 @@ use teloxide::{
 };
 use tokio::task::JoinHandle;
 
-use crate::utils::{app_settings::AppSettingsService, types_and_constants::Result};
+use crate::utils::types_and_constants::Result;
 
 /// These are all commands that the bot can handle.
 #[derive(BotCommands, Clone)]
@@ -27,8 +26,6 @@ enum Command {
     Start,
     #[command(description = "display this text.")]
     Help,
-    #[command(description = "pass a verification code for telegram client.")]
-    Code(String),
     #[command(description = "set a new deposit amount (for risk calculation)")]
     SetDeposit(Decimal),
     #[command(description = "set a new risk per trade in percentage")]
@@ -53,12 +50,12 @@ impl BotService {
         Ok(bot)
     } // end fn get_client
 
-    /// This function prompts a user for information.
+    /// This function sends a message to a user.
     pub async fn inform_client(bot: &Bot, chat_id: i64, message: impl AsRef<str>) -> Result<()> {
         // Shadow chat ID for convenience.
         let chat_id = ChatId(chat_id);
 
-        // Prompt a client for something.
+        // Send a message to a user.
         bot.send_message(chat_id, message.as_ref())
             .parse_mode(ParseMode::Html)
             .await?;
@@ -67,14 +64,10 @@ impl BotService {
     } // end fn inform_client
 
     /// This function sets up a listener for bot commands.
-    pub async fn set_listener(
-        bot: &Bot,
-        trusted_user_id: i64,
-        tx_telegram_code: Sender<String>,
-    ) -> JoinHandle<()> {
+    pub async fn set_listener(bot: &Bot) -> JoinHandle<()> {
         // Specify the async job to do.
         let async_job = Command::repl(bot.clone(), move |bot: Bot, msg: Message, cmd: Command| {
-            Self::answer(bot, msg, cmd, trusted_user_id, tx_telegram_code.clone())
+            Self::answer(bot, msg, cmd)
         });
 
         // Remember the reference to the async job.
@@ -86,15 +79,9 @@ impl BotService {
     } // end fn set_listener
 
     /// This function is a handler for bot commands.
-    async fn answer(
-        bot: Bot,
-        msg: Message,
-        cmd: Command,
-        trusted_user_id: i64,
-        tx_telegram_code: Sender<String>,
-    ) -> ResponseResult<()> {
+    async fn answer(bot: Bot, msg: Message, cmd: Command) -> ResponseResult<()> {
         // Check if it is a trusted user.
-        if msg.chat.id != ChatId(trusted_user_id) {
+        if msg.chat.id != ChatId(0) {
             // This user has no rights to interact with the bot.
             bot.send_message(
                 msg.chat.id,
@@ -117,14 +104,6 @@ impl BotService {
                     .parse_mode(ParseMode::Html)
                     .await?
             } // end Command::Help
-            Command::Code(code) => {
-                // Send the verification code to the client authentication service.
-                tx_telegram_code.send(code).await.unwrap();
-
-                bot.send_message(msg.chat.id, "Got the code!\nTrying to log in...")
-                    .parse_mode(ParseMode::Html)
-                    .await?
-            } // end Command::Code
             Command::SetDeposit(amount) => {
                 // Update the deposit to calculate risk from.
 

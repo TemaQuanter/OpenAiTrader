@@ -9,29 +9,29 @@ use std::fmt;
 /// to unambiguously parse the data to send an order to
 /// an exchange to execute it.
 #[derive(Debug)]
-pub struct ParseError {
+pub struct ExchangeError {
     details: String,
-} // end struct ParseError
+} // end struct ExchangeError
 
 /// Implement all the functionality to create an use an error.
-impl ParseError {
+impl ExchangeError {
     /// This function creates an error from a message.
     pub fn new(details: &str) -> Self {
-        ParseError {
+        ExchangeError {
             details: details.to_string(),
-        } // end ParseError
+        } // end ExchangeError
     } // end fn new
-} // end impl ParseError
+} // end impl ExchangeError
 
 /// Implement Display trait to make it possible to display
 /// the error messages.
-impl fmt::Display for ParseError {
+impl fmt::Display for ExchangeError {
     /// This function defines the behavior of proper error
     /// message printing.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.details)
     } // end fn fmt
-} // end impl fmt::Display for ParseError
+} // end impl fmt::Display for ExchangeError
 
-/// Implement the default Error for ParseError
-impl Error for ParseError {}
+/// Implement the default Error for ExchangeError
+impl Error for ExchangeError {}

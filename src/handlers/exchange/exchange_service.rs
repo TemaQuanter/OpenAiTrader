@@ -15,13 +15,13 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::{
     handlers::{
-        client::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+        bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
         exchange::dto::OpenedOrder,
     },
-    utils::{app_settings::AppSettingsService, types_and_constants::Result},
+    utils::types_and_constants::Result,
 };
 
-use super::{dto::OpenedPosition, error::ParseError};
+use super::{dto::OpenedPosition, error::ExchangeError};
 
 /// This struct contains all the functionality to interact
 /// with Bybit cryptocurrency exchange.
@@ -432,7 +432,7 @@ impl ExchangeService {
             position_idx = 2;
         } else {
             // It is most likely to be an error.
-            return Err(ParseError::new("Failed to parse position side").into());
+            return Err(ExchangeError::new("Failed to parse position side").into());
         } // end if
 
         // Get the current price of the contract.
@@ -466,7 +466,7 @@ impl ExchangeService {
 
                 position_opening.lower_bound_entry
             } // end "conditional"
-            _ => return Err(ParseError::new("Failed to parse order type").into()),
+            _ => return Err(ExchangeError::new("Failed to parse order type").into()),
         }; // end match
 
         // Get the current market price of the contract.
@@ -483,14 +483,14 @@ impl ExchangeService {
             if position_opening.direction == "Buy"
                 && position_opening.lower_bound_entry > cur_market_price
             {
-                return Err(ParseError::new(
+                return Err(ExchangeError::new(
                     "The market price is lower than the minimum entry price",
                 )
                 .into()); // end return
             } else if position_opening.direction == "Short"
                 && position_opening.lower_bound_entry < cur_market_price
             {
-                return Err(ParseError::new(
+                return Err(ExchangeError::new(
                     "The market price is higher than the minimum entry price",
                 )
                 .into()); // end return
@@ -682,7 +682,7 @@ impl ExchangeService {
 
         // If the position was not found, then return an error.
         if cur_position.is_none() {
-            return Err(ParseError::new("The position to close is not found").into());
+            return Err(ExchangeError::new("The position to close is not found").into());
         } // end if
 
         // Safely unwrap the position.
@@ -810,9 +810,10 @@ impl ExchangeService {
         // Check if the current position was found.
         if cur_position.is_none() {
             // The position was not found.
-            return Err(
-                ParseError::new("The position to adjust the stop loss of was not found").into(),
-            ); // end return
+            return Err(ExchangeError::new(
+                "The position to adjust the stop loss of was not found",
+            )
+            .into()); // end return
         } // end if
 
         // Safely unwrap the position.
@@ -827,7 +828,7 @@ impl ExchangeService {
                 && (stop_loss_adjustment.new_stop > cur_position.stop_loss_price))
         {
             // Reject the operation.
-            return Err(ParseError::new("Stop loss cannot increase the position risk").into());
+            return Err(ExchangeError::new("Stop loss cannot increase the position risk").into());
         } // end if
 
         // Get all the opened orders.
@@ -851,7 +852,9 @@ impl ExchangeService {
 
         // If the order was not found, then return error.
         if cur_order.is_none() {
-            return Err(ParseError::new("The order was not found for stop loss adjustment").into());
+            return Err(
+                ExchangeError::new("The order was not found for stop loss adjustment").into(),
+            );
         } // end if
 
         // Safely unwrap the order.
@@ -1005,7 +1008,7 @@ impl ExchangeService {
         // Make sure the risk is not greater than 1.
         if position_opening.risk > dec!(1.0) || position_opening.risk < dec!(0.0) {
             // It is not safe to get into such a position.
-            return Err(ParseError::new("The risk must be in the rage from 0 to 1").into());
+            return Err(ExchangeError::new("The risk must be in the rage from 0 to 1").into());
         } // end if
 
         // Get all the position that are currently active.
@@ -1020,7 +1023,7 @@ impl ExchangeService {
                 && active_position.side == position_opening.direction
             {
                 // Reject the request to open a position.
-                return Err(ParseError::new("The position is already opened").into());
+                return Err(ExchangeError::new("The position is already opened").into());
             } // end if
         } // end for
 
@@ -1040,7 +1043,7 @@ impl ExchangeService {
                 && opened_order.side == position_opening.direction
             {
                 // Reject the request to place the order.
-                return Err(ParseError::new("The order is already placed").into());
+                return Err(ExchangeError::new("The order is already placed").into());
             } // end if
         } // end for
 
@@ -1126,6 +1129,6 @@ impl ExchangeService {
         // Otherwise there is an error in the response.
         // Return an error with the error message received from the
         // exchange.
-        return Err(ParseError::new(&response["retMsg"].to_string().replace("\"", "")).into());
+        return Err(ExchangeError::new(&response["retMsg"].to_string().replace("\"", "")).into());
     } // end fn validate_exchange_response
 } // end impl ExchangeService

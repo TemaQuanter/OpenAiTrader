@@ -1,13 +1,27 @@
 {
   "cSpell.words": [
+    "artem",
     "botters",
     "Bybit",
+    "contenteditable",
+    "convo",
     "dotenv",
+    "editables",
     "flexi",
+    "GDFN",
     "grammers",
+    "mikheev",
+    "onsubmit",
+    "openai",
+    "quantile",
     "rasync",
     "repls",
     "teloxide",
+    "tiktoken",
     "tpsl"
-]
+],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.autopep8"
+  },
+  "python.formatting.provider": "none"
 }

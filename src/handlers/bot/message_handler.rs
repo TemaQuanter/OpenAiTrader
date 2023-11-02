@@ -7,15 +7,11 @@ use teloxide::Bot;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    handlers::{
-        bot::bot_service::BotService,
-        client::dto::{PositionClosure, PositionOpening},
-        exchange::exchange_service::ExchangeService,
-    },
-    utils::{app_settings::AppSettingsService, types_and_constants::Result},
+    handlers::{bot::bot_service::BotService, exchange::exchange_service::ExchangeService},
+    utils::types_and_constants::Result,
 };
 
-use super::dto::StopLossAdjustment;
+use super::dto::{PositionClosure, PositionOpening, StopLossAdjustment};
 
 /// This struct contains all the functionality to
 /// track and to handle incoming messages for a Telegram client.

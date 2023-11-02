@@ -1,7 +1,7 @@
 use rust_decimal_macros::dec;
 use trading_bot::{
     handlers::{
-        client::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+        bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
         exchange::exchange_service::ExchangeService,
     },
     utils::credential_security::CredentialSecurity,

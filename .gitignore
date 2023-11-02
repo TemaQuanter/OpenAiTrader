@@ -1,8 +1,19 @@
+# Cargo build artifacts.
 /target
+/gpt_fine_tuning/test_editing_engine/target
 
-# Secrets for the bot
+# Secrets for the bot.
 /secrets
 /data
 
-# Environmental variables
+# Environmental variables.
 .env
+
+# Custom python virtual environment.
+/gpt_fine_tuning/venv
+
+# Environmental variables for ChatGPT fine-tuning.
+/gpt_fine_tuning/.env
+
+# Private dataset.
+/gpt_fine_tuning/raw_datasets

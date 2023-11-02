@@ -36,15 +36,10 @@ pub struct PositionIncrease {
     pub ticker: String,
     /// A direction (short/long).
     pub direction: String,
-    /// A risk for per trade represented in xR
-    /// For example 0.5R, where R is the default risk per trade
-    pub risk: Decimal,
-    /// Order type.
-    pub order_type: String,
-    /// Lower bound entrance point.
-    pub lower_bound_entry: Decimal,
-    /// Upper bound entrance point.
-    pub upper_bound_entry: Decimal,
+    /// A new stop loss.
+    pub new_stop: Decimal,
+    /// A percentage to increase the position by.
+    pub percentage_to_increase: Decimal,
 } // end struct PositionIncrease
 
 /// This structure represents a closure of
@@ -68,7 +63,6 @@ pub struct StopLossAdjustment {
     pub ticker: String,
     /// A direction (short/long).
     pub direction: String,
-    /// What percentage of the volume
-    /// should be closed.
+    /// A new stop.
     pub new_stop: Decimal,
 } // end struct StopLossAdjustment
