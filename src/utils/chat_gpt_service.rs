@@ -5,7 +5,7 @@ use std::{fs, io::Read};
 
 use chatgpt::prelude::{ChatGPT, Conversation};
 
-use super::types_and_constants::{Result, CHAT_GPT_SEED_PROMPT_FILE};
+use super::types_and_constants::{OneResult, CHAT_GPT_SEED_PROMPT_FILE};
 
 /// This structure contains all the functionality to work
 /// with ChatGPT.
@@ -15,7 +15,7 @@ pub struct ChatGPTService;
 /// working with ChatGPT.
 impl ChatGPTService {
     /// This function creates a new conversation with ChatGPT.
-    pub async fn get_conversation(chatgpt_client: &ChatGPT) -> Result<Conversation> {
+    pub async fn get_conversation(chatgpt_client: &ChatGPT) -> OneResult<Conversation> {
         // Load a file with a seed prompt.
         let mut prompt_file = fs::File::open(CHAT_GPT_SEED_PROMPT_FILE)?;
 

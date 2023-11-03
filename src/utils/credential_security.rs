@@ -2,7 +2,7 @@
 
 use std::{env, ffi::OsStr};
 
-use crate::utils::types_and_constants::Result;
+use crate::utils::types_and_constants::OneResult;
 use base64::Engine;
 use dotenv::dotenv;
 
@@ -14,7 +14,7 @@ pub struct CredentialSecurity;
 impl CredentialSecurity {
     /// This function decodes environmental variables
     /// that are stored in base64 encoded format.
-    pub fn decode_env_var(name: impl AsRef<OsStr>) -> Result<String> {
+    pub fn decode_env_var(name: impl AsRef<OsStr>) -> OneResult<String> {
         // Load .env file.
         dotenv().ok();
 
@@ -31,7 +31,7 @@ impl CredentialSecurity {
     } // end encode_env_var
 
     /// This function simply gets non-encoded environmental variables
-    pub fn env_var(name: impl AsRef<OsStr>) -> Result<String> {
+    pub fn env_var(name: impl AsRef<OsStr>) -> OneResult<String> {
         // Load .env file.
         dotenv().ok();
 

@@ -14,9 +14,11 @@ CREATE TABLE users(
     -- Exchange API secret of a user.
     exchange_api_secret VARCHAR(200),
     -- The deposit that is used to calculate a volume per trade from.
-    deposit VARCHAR(20),
+    deposit NUMERIC(12, 2),
     -- The risk (in %) that is used  to calculate a volume per trade from.
-    risk VARCHAR(3),
+    risk NUMERIC(5, 2),
     -- Whether or not bot is allowed to trade for this user.
-    bot_active BOOLEAN NOT NULL
+    bot_active BOOLEAN NOT NULL,
+    -- The user role.
+    role_id INT REFERENCES role (role_id) NOT NULL
 ); -- end create table user
