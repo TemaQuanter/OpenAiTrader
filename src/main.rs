@@ -10,7 +10,7 @@ use flexi_logger::{Age, Cleanup, Criterion, FileSpec, Logger, Naming, WriteMode}
 use utils::chat_gpt_service::ChatGPTService;
 use utils::credential_security::CredentialSecurity;
 
-use crate::handlers::bot::bot_service::BotService;
+use crate::handlers::bot::bot_service::{BotService, BotState};
 use crate::utils::database_service::DatabaseService;
 // use crate::handlers::bot::bot_service::BotService;
 use crate::utils::types_and_constants::OneResult;
@@ -45,15 +45,21 @@ async fn main() -> OneResult<()> {
     let chat_gpt_url: String = CredentialSecurity::env_var("CHAT_GPT_URL").unwrap();
 
     // Create a database connection pool.
-    let db_conn_pool = DatabaseService::create_database_connection_pool();
+    let pg_connection_pool = DatabaseService::create_database_connection_pool();
 
     log::info!("Environmental variables loaded");
 
     // Initialize a telegram bot.
     let bot = BotService::new_bot(&tg_bot_api).unwrap();
 
-    // Set up bot listener (start listening for incoming commands)
-    let bot_command_handler = BotService::set_listener(&bot, db_conn_pool.clone()).await;
+    // Set up bot listener (start listening for incoming messages)
+    let bot_service = BotService::set_listener(
+        bot,
+        BotState {
+            pg_connection_pool: pg_connection_pool.clone(),
+        },
+    )
+    .await;
 
     // Initialize ChatGPT client.
     let chatgpt_client = ChatGPT::new_with_config(
@@ -82,9 +88,10 @@ async fn main() -> OneResult<()> {
     // Run the program till it is cancelled
     tokio::select! {
         _ = async move {
-            // Run a separate task with bot command listener.
-            bot_command_handler.await.unwrap();
+            // Run a separate task with a bot service.
+            bot_service.await.unwrap();
         } => {},
+            // Handle Ctrl + C
         _ = tokio::signal::ctrl_c() => {}
     } // end tokio::select!
 

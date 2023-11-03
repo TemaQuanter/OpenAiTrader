@@ -6,6 +6,7 @@
     "contenteditable",
     "convo",
     "dotenv",
+    "dptree",
     "editables",
     "flexi",
     "GDFN",
@@ -21,7 +22,7 @@
     "teloxide",
     "tiktoken",
     "tpsl"
-],
+  ],
   "[python]": {
     "editor.defaultFormatter": "ms-python.autopep8"
   },
