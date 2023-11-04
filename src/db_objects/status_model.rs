@@ -6,6 +6,7 @@ use diesel::{
 use serde::{Deserialize, Serialize};
 
 /// This enumeration contains all user status titles.
+#[derive(Clone)]
 pub enum StatusId {
     Pending = 1,
     Rejected,

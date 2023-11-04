@@ -6,6 +6,7 @@ use diesel::{
 use serde::{Deserialize, Serialize};
 
 /// This enumeration contains all user role titles.
+#[derive(PartialEq, Clone)]
 pub enum RoleId {
     User = 1,
     Admin,

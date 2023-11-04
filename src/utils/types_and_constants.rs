@@ -12,5 +12,8 @@ pub const _CHAT_GPT_HISTORY_LENGTH: usize = 200;
 // The location of a file with seed prompt for ChatGPT
 pub const CHAT_GPT_SEED_PROMPT_FILE: &str = "data/chatgpt_seed_prompt.txt";
 
+// The custom trained model of ChatGPT for this specific task.
+pub const CHAT_GPT_MODEL: &str = "ft:gpt-3.5-turbo-0613:artem-mikheev::8GDFN4sR";
+
 // Error message for telegram users.
 pub const ERROR_MESSAGE: &str = "Something went wrong with me, please, try again later";

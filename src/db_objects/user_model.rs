@@ -7,6 +7,8 @@ use diesel::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use super::{role_model::RoleId, status_model::StatusId};
+
 /// This structure represents a user object in a database.
 #[derive(
     Default, Clone, Debug, Queryable, Identifiable, Insertable, Serialize, Deserialize, AsChangeset,
@@ -70,10 +72,32 @@ impl User {
     /// The function returns error if the operation fails.
     /// If the operation is successful, the function returns the updated user.
     pub fn update(user: &User, conn: &mut PgConnection) -> Result<Self, diesel::result::Error> {
-        let updated_user: Self = diesel::update(crate::schema::users::table)
-            .set(user)
-            .get_result(conn)?;
+        let updated_user: Self = diesel::update(user).set(user).get_result(conn)?;
 
         Ok(updated_user)
     } // end fn update
+
+    /// This function retrieves an array of users with a particular status
+    pub fn get_users_with_status(
+        status_id: &StatusId,
+        conn: &mut PgConnection,
+    ) -> Result<Vec<Self>, diesel::result::Error> {
+        let retrieved_users: Vec<Self> = crate::schema::users::dsl::users
+            .filter(crate::schema::users::dsl::status_id.eq(i32::from(status_id.clone())))
+            .load(conn)?;
+
+        Ok(retrieved_users)
+    } // end fn get_users_with_status
+
+    /// This function retrieves an array of users with a particular role
+    pub fn get_users_with_role(
+        role_id: &RoleId,
+        conn: &mut PgConnection,
+    ) -> Result<Vec<Self>, diesel::result::Error> {
+        let retrieved_users: Vec<Self> = crate::schema::users::dsl::users
+            .filter(crate::schema::users::dsl::role_id.eq(i32::from(role_id.clone())))
+            .load(conn)?;
+
+        Ok(retrieved_users)
+    } // end fn get_users_with_role
 } // end impl User

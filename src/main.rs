@@ -13,7 +13,7 @@ use utils::credential_security::CredentialSecurity;
 use crate::handlers::bot::bot_service::{BotService, BotState};
 use crate::utils::database_service::DatabaseService;
 // use crate::handlers::bot::bot_service::BotService;
-use crate::utils::types_and_constants::OneResult;
+use crate::utils::types_and_constants::{OneResult, CHAT_GPT_MODEL};
 
 #[tokio::main]
 async fn main() -> OneResult<()> {
@@ -58,6 +58,7 @@ async fn main() -> OneResult<()> {
         BotState {
             pg_connection_pool: pg_connection_pool.clone(),
         },
+        trusted_channel_id,
     )
     .await;
 
@@ -67,9 +68,7 @@ async fn main() -> OneResult<()> {
         ModelConfigurationBuilder::default()
             .api_url(Url::from_str(&chat_gpt_url).unwrap())
             .temperature(0.5)
-            .engine(ChatGPTEngine::Custom(
-                "ft:gpt-3.5-turbo-0613:artem-mikheev::8GDFN4sR",
-            ))
+            .engine(ChatGPTEngine::Custom(CHAT_GPT_MODEL))
             .build()
             .unwrap(),
     )

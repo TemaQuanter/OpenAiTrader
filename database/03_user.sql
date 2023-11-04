@@ -22,3 +22,8 @@ CREATE TABLE users(
     -- The user role.
     role_id INT REFERENCES role (role_id) NOT NULL
 ); -- end create table user
+
+-- Create indexes in order to retrieve the data faster from
+-- the database by a particular column.
+CREATE INDEX idx_telegram_username ON users (telegram_username);
+CREATE INDEX idx_status_id ON users (status_id);
