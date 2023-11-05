@@ -15,6 +15,7 @@ use utils::chat_gpt_service::ChatGPTService;
 use utils::credential_security::CredentialSecurity;
 
 use crate::handlers::bot::bot_service::{BotService, BotState};
+use crate::handlers::bot::message_service::MessageService;
 use crate::utils::database_service::DatabaseService;
 // use crate::handlers::bot::bot_service::BotService;
 use crate::utils::types_and_constants::CHAT_GPT_MODEL;
@@ -69,7 +70,7 @@ async fn main() -> Result<(), AppError> {
         chat_gpt_api,
         ModelConfigurationBuilder::default()
             .api_url(Url::from_str(&chat_gpt_url).unwrap())
-            .temperature(0.5)
+            .temperature(0.0)
             .engine(ChatGPTEngine::Custom(CHAT_GPT_MODEL))
             .build()
             .unwrap(),
@@ -83,17 +84,22 @@ async fn main() -> Result<(), AppError> {
         .await
         .unwrap();
 
+    // Assemble a bot state.
+    let bot_state = BotState {
+        pg_connection_pool: Arc::new(pg_connection_pool),
+        chatgpt_conversation: Arc::new(Mutex::new(chatgpt_conversation)),
+        trusted_channel_id,
+        log_channel_id,
+    };
+
     // Set up bot listener (start listening for incoming messages)
-    let bot_service = BotService::set_listener(
-        bot,
-        BotState {
-            pg_connection_pool: Arc::new(pg_connection_pool),
-            chatgpt_conversation: Arc::new(Mutex::new(chatgpt_conversation)),
-            trusted_channel_id,
-            log_channel_id,
-        },
-    )
-    .await;
+    let bot_service = BotService::set_listener(bot.clone(), bot_state.clone()).await;
+
+    // Determine the age of an "old" post.
+    let old_age = chrono::Duration::days(32);
+
+    // Determine the frequency to remove "old" post with (in seconds).
+    let wait_time_secs: u64 = 24 * 60 * 60;
 
     log::info!("Got ChatGPT conversation");
     log::info!("Start listening for incoming messages");
@@ -103,7 +109,11 @@ async fn main() -> Result<(), AppError> {
         _ = async move {
             // Run a separate task with a bot service.
             bot_service.await.unwrap();
-        } => {},
+        } => {}
+        _ = async move {
+            // Run a separate task to remove "old" posts from the database.
+            MessageService::remove_old_messages(bot_state.clone(), old_age, wait_time_secs, bot.clone()).await;
+        } => {}
             // Handle Ctrl + C
         _ = tokio::signal::ctrl_c() => {}
     } // end tokio::select!

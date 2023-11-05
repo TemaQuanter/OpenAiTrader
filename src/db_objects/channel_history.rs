@@ -50,4 +50,18 @@ impl ChannelHistory {
 
         Ok(retrieved_message)
     } // end fn get_from_db_by_id
+
+    /// This function removes all messages that are older than a particular
+    /// timestamp. (This function is necessary not to overload the database
+    /// with messages).s
+    pub fn remove_old_messages(
+        timestamp: DateTime<Utc>,
+        conn: &mut PgConnection,
+    ) -> Result<(), diesel::result::Error> {
+        diesel::delete(crate::schema::channel_history::table)
+            .filter(crate::schema::channel_history::dsl::message_timestamp.le(timestamp))
+            .execute(conn)?;
+
+        Ok(())
+    } // end fn remove_old_messages
 } // end impl ChannelHistory

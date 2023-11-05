@@ -4,7 +4,11 @@
 use std::sync::Arc;
 
 use chatgpt::prelude::Conversation;
-use diesel::PgConnection;
+use chrono::Utc;
+use diesel::{
+    r2d2::{ConnectionManager, Pool},
+    PgConnection,
+};
 use teloxide::{
     requests::{Requester, ResponseResult},
     types::{ChatId, Message, User, UserId},
@@ -45,8 +49,9 @@ impl MessageService {
         // Check if an error occurred while assembling the legend.
         if trade_legend.is_err() {
             // Inform the users in log channel about the error.
-            bot.send_message(
-                ChatId(bot_state.log_channel_id),
+            BotService::inform_client(
+                bot,
+                bot_state.log_channel_id,
                 "Failed to assemble a trade legend",
             )
             .await?;
@@ -66,43 +71,44 @@ impl MessageService {
         // Safely unwrap the legend.
         let trade_legend = trade_legend.unwrap();
 
-        println!("{}", trade_legend);
-
         // Feed the message to ChatGPT.
-        // let response_chatgpt = chatgpt_conversation.send_message(&trade_legend).await?;
+        let response_chatgpt = chatgpt_conversation
+            .send_message(&trade_legend)
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
-        // let chatgpt_message = response_chatgpt.message().content.clone();
+        let chatgpt_message = response_chatgpt.message().content.clone();
 
         // Try to parse the the response from ChatGPT and
         // react to it appropriately.
         // Self::react_to_signal(chatgpt_message, bot, trusted_user_id, exchange_client).await?;
 
         // Remove a message from the history in order not to waste tokens.
-        // chatgpt_conversation.history.truncate(2);
+        chatgpt_conversation.history.truncate(2);
 
-        // BotService::inform_client(
-        //     &bot,
-        //     bot_state.log_channel_id,
-        //     "<b>A potential signal!</b>💰",
-        // )
-        // .await?;
+        BotService::inform_client(
+            &bot,
+            bot_state.log_channel_id,
+            "<b>A potential signal!</b>💰",
+        )
+        .await?;
 
-        // BotService::inform_client(&bot, bot_state.log_channel_id, trade_legend).await?;
+        BotService::inform_client(&bot, bot_state.log_channel_id, trade_legend).await?;
 
-        // BotService::inform_client(
-        //     &bot,
-        //     bot_state.log_channel_id,
-        //     "💬<b>ChatGPT</b> said...👇👇👇",
-        // )
-        // .await?;
+        BotService::inform_client(
+            &bot,
+            bot_state.log_channel_id,
+            "💬<b>ChatGPT</b> said...👇👇👇",
+        )
+        .await?;
 
-        // // Respond to the user via Telegram bot about a trading decision.
-        // BotService::inform_client(
-        //     &bot,
-        //     bot_state.log_channel_id,
-        //     response_chatgpt.message().content.to_string(),
-        // )
-        // .await?;
+        // Respond to the user via Telegram bot about a trading decision.
+        BotService::inform_client(
+            &bot,
+            bot_state.log_channel_id,
+            response_chatgpt.message().content.to_string(),
+        )
+        .await?;
 
         Ok(())
     } // end fn handle_message
@@ -110,7 +116,7 @@ impl MessageService {
     /// This function tries to assemble a trade legend when it is possible.
     /// If it is just a message, it skips it.
     async fn assemble_trade_legend(
-        mut message: Message,
+        message: Message,
         bot_state: BotState,
     ) -> Result<Option<String>, AppError> {
         // Initialize an array that will be storing a trade legend.
@@ -231,6 +237,101 @@ impl MessageService {
             } // end Err
         }; // end match
     } // end fn get_message_from_db_by_id
+
+    /// This function gets read of old messages from the database.
+    /// This function is considered to be run as a separate asynchronous task.
+    pub async fn remove_old_messages(
+        bot_state: BotState,
+        age: chrono::Duration,
+        wait_time_secs: u64,
+        bot: Bot,
+    ) {
+        // This variable indicates whether or not the operation was successful.
+        let mut is_success = false;
+
+        // Endless loop that consistently removes legacy messages.
+        loop {
+            // Check whether or not the operation was successful.
+            if is_success {
+                // Reset the flag to default value.
+                is_success = false;
+
+                // Wait till the next day to perform the task.
+                tokio::time::sleep(tokio::time::Duration::from_secs(wait_time_secs)).await;
+            } else {
+                // Wait for some time to repeat the task.
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            } // end if
+
+            // Get a connection to the database.
+            let conn =
+                &mut match DatabaseService::get_pool_connection(&bot_state.pg_connection_pool) {
+                    Ok(conn) => conn,
+                    Err(error) => {
+                        log::error!("{}", error);
+
+                        // Inform the users in the log channel about the error.
+                        match BotService::inform_client(
+                            &bot,
+                            bot_state.log_channel_id,
+                            "Failed to connect to the database (to remove old posts)",
+                        )
+                        .await
+                        {
+                            Ok(_) => (),
+                            Err(error) => {
+                                log::error!("{}", error);
+                            } // end Err
+                        }; // end match
+
+                        continue;
+                    } // end Err
+                }; // end match
+
+            // Calculate the timestamp of an "old" post.
+            let old_timestamp = Utc::now() - age;
+
+            // Try to remove the "old" messages from the database.
+            match ChannelHistory::remove_old_messages(old_timestamp, conn) {
+                Ok(_) => (),
+                Err(error) => {
+                    log::error!("{}", error);
+
+                    // Inform the users in the log channel about the error.
+                    match BotService::inform_client(
+                        &bot,
+                        bot_state.log_channel_id,
+                        "Failed to remove old posts",
+                    )
+                    .await
+                    {
+                        Ok(_) => (),
+                        Err(error) => {
+                            log::error!("{}", error);
+                        } // end Err
+                    }; // end match
+                }
+            } // end match
+
+            // Indicate that the operation was completed successfully.
+            is_success = true;
+
+            // Send the message to the log channel that the operation was successful.
+            // Inform the users in the log channel about the error.
+            match BotService::inform_client(
+                &bot,
+                bot_state.log_channel_id,
+                "Old posts were removed from the database",
+            )
+            .await
+            {
+                Ok(_) => (),
+                Err(error) => {
+                    log::error!("{}", error);
+                } // end Err
+            }; // end match
+        } // end loop
+    } // end fn remove_old_messages
 
     /// This function parses the response from ChatGPT and reacts to
     /// it opening, closing or increasing positions on perpetual swaps in USDT.
