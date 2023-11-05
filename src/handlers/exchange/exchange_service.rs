@@ -18,7 +18,7 @@ use crate::{
         bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
         exchange::dto::OpenedOrder,
     },
-    utils::types_and_constants::Result,
+    utils::types_and_constants::OneResult,
 };
 
 use super::{dto::OpenedPosition, error::ExchangeError};
@@ -31,7 +31,7 @@ pub struct ExchangeService;
 /// Bybit cryptocurrency exchange.
 impl ExchangeService {
     /// This function creates an exchange client.
-    pub fn get_client(api: String, secret: String) -> Result<Client> {
+    pub fn get_client(api: String, secret: String) -> OneResult<Client> {
         let mut client = Client::new();
 
         // Authorize the client.
@@ -43,7 +43,7 @@ impl ExchangeService {
 
     /// This function returns the amount of USDT on Unified Trading Account.
     /// Value is returned in USDT.
-    pub async fn get_uta_usdt_balance(client: &Client) -> Result<Decimal> {
+    pub async fn get_uta_usdt_balance(client: &Client) -> OneResult<Decimal> {
         // Get the information about USDT balance on UTA.
         let response: serde_json::Value = client
             .get(
@@ -55,7 +55,7 @@ impl ExchangeService {
 
         // Return the balance of the wallet in USDT.
         Ok(Decimal::from_str_exact(
-            &response["result"]["list"][0]["coin"][0]["equity"]
+            &response["OneResult"]["list"][0]["coin"][0]["equity"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -68,7 +68,7 @@ impl ExchangeService {
     pub async fn monitor_and_clear_legacy_conditional_orders(
         client: &Client,
         mut rx_exchange_monitoring: Receiver<String>,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // This variable determines whether or not the monitoring
         // is allowed to work.
         let mut monitoring_working = true;
@@ -160,7 +160,7 @@ impl ExchangeService {
 
     /// This function returns all the current opened
     /// perpetual swaps positions on UTA.
-    pub async fn get_all_opened_positions(client: &Client) -> Result<Vec<OpenedPosition>> {
+    pub async fn get_all_opened_positions(client: &Client) -> OneResult<Vec<OpenedPosition>> {
         // Send a request and get the information about opened positions.
         let response: serde_json::Value = client
             .get(
@@ -173,7 +173,7 @@ impl ExchangeService {
         // Parse the data into a DTO.
 
         // Convert the response into an array of opened positions.
-        let opened_positions_raw = response["result"]["list"].as_array().unwrap();
+        let opened_positions_raw = response["OneResult"]["list"].as_array().unwrap();
 
         // Declare an array that stores parsed opened positions.
         let mut opened_positions: Vec<OpenedPosition> = Vec::new();
@@ -191,7 +191,7 @@ impl ExchangeService {
     } // end fn get_all_opened_positions
 
     /// This function returns all opened orders on perpetual swaps in USDT.
-    pub async fn get_all_opened_orders(client: &Client) -> Result<Vec<OpenedOrder>> {
+    pub async fn get_all_opened_orders(client: &Client) -> OneResult<Vec<OpenedOrder>> {
         // Send a request and get the information about opened orders.
         let response: serde_json::Value = client
             .get(
@@ -204,7 +204,7 @@ impl ExchangeService {
         // Parse the data into a DTO.
 
         // Convert the response into an array of opened orders.
-        let opened_orders_raw = response["result"]["list"].as_array().unwrap();
+        let opened_orders_raw = response["OneResult"]["list"].as_array().unwrap();
 
         // Declare an array that stores parsed opened orders.
         let mut opened_orders: Vec<OpenedOrder> = Vec::new();
@@ -225,7 +225,7 @@ impl ExchangeService {
     /// into a structure.
     pub fn parse_opened_position(
         raw_opened_position: &serde_json::Value,
-    ) -> Result<OpenedPosition> {
+    ) -> OneResult<OpenedPosition> {
         // Try to parse the object into a structure.
         //
         // P.S There are extra double quotes that it is necessary
@@ -267,7 +267,7 @@ impl ExchangeService {
 
     /// This function parses the raw JSON object with an opened position
     /// into a structure.
-    pub fn parse_opened_order(raw_opened_order: &serde_json::Value) -> Result<OpenedOrder> {
+    pub fn parse_opened_order(raw_opened_order: &serde_json::Value) -> OneResult<OpenedOrder> {
         // Try to parse the object into a structure.
         //
         // P.S There are extra double quotes that it is necessary
@@ -299,7 +299,7 @@ impl ExchangeService {
     pub async fn get_instrument_price_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> Result<Decimal> {
+    ) -> OneResult<Decimal> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -311,7 +311,7 @@ impl ExchangeService {
 
         // Get the current market price.
         let market_price = Decimal::from_str_exact(
-            &response["result"]["list"][0]["markPrice"]
+            &response["OneResult"]["list"][0]["markPrice"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -325,7 +325,7 @@ impl ExchangeService {
     pub async fn get_price_step_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> Result<Decimal> {
+    ) -> OneResult<Decimal> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -337,7 +337,7 @@ impl ExchangeService {
 
         // Get the quantity step for the instrument.
         let price_step = Decimal::from_str_exact(
-            &response["result"]["list"][0]["priceFilter"]["tickSize"]
+            &response["OneResult"]["list"][0]["priceFilter"]["tickSize"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -351,7 +351,7 @@ impl ExchangeService {
     pub async fn get_quantity_step_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> Result<Decimal> {
+    ) -> OneResult<Decimal> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -363,7 +363,7 @@ impl ExchangeService {
 
         // Get the quantity step for the instrument.
         let quantity_step = Decimal::from_str_exact(
-            &response["result"]["list"][0]["lotSizeFilter"]["qtyStep"]
+            &response["OneResult"]["list"][0]["lotSizeFilter"]["qtyStep"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -377,7 +377,7 @@ impl ExchangeService {
     pub async fn open_position_on_perpetual_swaps(
         position_opening: &PositionOpening,
         client: &Client,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // Make a copy of the position to modify it later.
         let mut position_opening = (*position_opening).clone();
 
@@ -631,7 +631,7 @@ impl ExchangeService {
     pub async fn close_part_of_position_on_perpetual_swaps(
         position_closure: &PositionClosure,
         client: &Client,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // Remove all conditional orders related to the position and
         // get the information on whether or not it is necessary to
         // remove an actual position or it was a conditional order
@@ -775,7 +775,7 @@ impl ExchangeService {
     pub async fn adjust_stop_loss_on_perpetual_swaps(
         stop_loss_adjustment: &StopLossAdjustment,
         client: &Client,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // This variable shows the side of the opened position.
         let position_side: &str;
 
@@ -879,7 +879,11 @@ impl ExchangeService {
 
     /// This function sets a leverage for a particular position on
     /// perpetual swaps in USDT.
-    pub async fn set_leverage(client: &Client, ticker: &String, leverage: Decimal) -> Result<()> {
+    pub async fn set_leverage(
+        client: &Client,
+        ticker: &String,
+        leverage: Decimal,
+    ) -> OneResult<()> {
         // Send a request to adjust a leverage on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -898,7 +902,10 @@ impl ExchangeService {
     } // end fn set_leverage
 
     /// This function sets a position in a hedge-mode.
-    pub async fn set_hedge_mode_on_perpetual_swaps(client: &Client, ticker: &String) -> Result<()> {
+    pub async fn set_hedge_mode_on_perpetual_swaps(
+        client: &Client,
+        ticker: &String,
+    ) -> OneResult<()> {
         // Send a request to set a position in a hedge-mode on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -925,7 +932,7 @@ impl ExchangeService {
         client: &Client,
         ticker: &String,
         side: &String,
-    ) -> Result<bool> {
+    ) -> OneResult<bool> {
         // Get a copy of the ticker.
         // It is required for further part of the code.
         let ticker = ticker.to_string();
@@ -933,7 +940,7 @@ impl ExchangeService {
         // Get all the opened orders.
         let opened_orders = Self::get_all_opened_orders(client).await?;
 
-        // This variable stores the result of the function.
+        // This variable stores the OneResult of the function.
         let mut order_removed = false;
 
         // This parameter is required to work with orders in a hedge-mode.
@@ -980,7 +987,7 @@ impl ExchangeService {
     pub async fn cancel_order_on_perpetual_swaps(
         client: &Client,
         order: &OpenedOrder,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // Send a request to cancel an order on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -1004,7 +1011,7 @@ impl ExchangeService {
     pub async fn verify_position(
         position_opening: &PositionOpening,
         client: &Client,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // Make sure the risk is not greater than 1.
         if position_opening.risk > dec!(1.0) || position_opening.risk < dec!(0.0) {
             // It is not safe to get into such a position.
@@ -1058,7 +1065,7 @@ impl ExchangeService {
         position_side: &String,
         trigger_price: String,
         qty: String,
-    ) -> Result<()> {
+    ) -> OneResult<()> {
         // The opposite direction to close the position.
         let side: &str;
 
@@ -1108,7 +1115,7 @@ impl ExchangeService {
     /// This function validates the response code from an exchange.
     /// If the response code is different from 0, then it generates
     /// an error and returns it.
-    pub fn validate_exchange_response(response: &serde_json::Value) -> Result<()> {
+    pub fn validate_exchange_response(response: &serde_json::Value) -> OneResult<()> {
         // This is a set of codes that can be considered as success.
         // NOTE: To check the codes, visit Bybit API documentation.
         let success_codes = vec![0, 110025, 110026, 110027, 110043];

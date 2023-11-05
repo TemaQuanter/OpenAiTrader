@@ -1,15 +1,27 @@
 // This file contains the main loop for incoming
 // messages tracking.
 
+use std::sync::Arc;
+
 use chatgpt::prelude::Conversation;
+use diesel::PgConnection;
 use teloxide::{
-    types::{Message, User, UserId},
+    requests::{Requester, ResponseResult},
+    types::{ChatId, Message, User, UserId},
     Bot,
 };
+use tokio::sync::Mutex;
 
-use crate::{handlers::bot::bot_service::BotService, utils::types_and_constants::OneResult};
+use crate::{
+    db_objects::channel_history::ChannelHistory,
+    handlers::bot::bot_service::BotService,
+    utils::{app_error::AppError, database_service::DatabaseService},
+};
 
-use super::dto::{PositionClosure, PositionOpening, StopLossAdjustment};
+use super::{
+    bot_service::BotState,
+    dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+};
 
 /// This struct contains all the functionality to
 /// track and to handle incoming messages for a Telegram client.
@@ -19,117 +31,142 @@ pub struct MessageService;
 /// incoming messages for a Telegram client.
 impl MessageService {
     /// This function handles a new message from a particular chat.
-    // pub async fn handle_message(
-    //     message: Message,
-    //     mut chatgpt_conversation: Conversation,
-    //     bot: &Bot,
-    //     trusted_user_id: i64,
-    //     tg_client: &Client,
-    //     exchange_client: &crypto_botters::Client,
-    // ) -> Result<Conversation> {
-    //     log::info!(
-    //         "Got a new message!\n\
-    //     ChatID: {}\n\
-    //     ChatName: {}",
-    //         message.chat().id(),
-    //         message.chat().name()
-    //     ); // end log::info
+    pub async fn handle_message(
+        message: Message,
+        bot_state: BotState,
+        bot: &Bot,
+    ) -> Result<(), AppError> {
+        // Acquire the conversation.
+        let mut chatgpt_conversation = bot_state.chatgpt_conversation.lock().await;
 
-    //     // // Load the application settings.
-    //     // let application_settings = AppSettingsService::load_settings()?;
+        // Try to assemble a trade legend.
+        let trade_legend = Self::assemble_trade_legend(message, bot_state.clone()).await;
 
-    //     // // Check if the bot is allowed to trade.
-    //     // if !application_settings.is_active {
-    //     //     // The bot is not allowed to trade.
-    //     //     return Ok(chatgpt_conversation);
-    //     // } // end if
+        // Check if an error occurred while assembling the legend.
+        if trade_legend.is_err() {
+            // Inform the users in log channel about the error.
+            bot.send_message(
+                ChatId(bot_state.log_channel_id),
+                "Failed to assemble a trade legend",
+            )
+            .await?;
 
-    //     // Try to assemble a trade legend.
-    //     let trade_legend = Self::assemble_trade_legend(message, tg_client).await;
+            return Ok(());
+        } // end if
 
-    //     // Check if it is most likely to be a signal or not.
-    //     if trade_legend.is_none() {
-    //         // It is less likely to be a signal.
-    //         return Ok(chatgpt_conversation);
-    //     } // end if
+        // Safely unwrap the legend.
+        let trade_legend = trade_legend.unwrap();
 
-    //     // Unwrap trade_legend.
-    //     let trade_legend = trade_legend.unwrap();
+        // Check if it is most likely to be a signal or not.
+        if trade_legend.is_none() {
+            // It is less likely to be a signal.
+            return Ok(());
+        } // end if
 
-    //     // Feed the message to ChatGPT.
-    //     let response_chatgpt = chatgpt_conversation.send_message(&trade_legend).await?;
+        // Safely unwrap the legend.
+        let trade_legend = trade_legend.unwrap();
 
-    //     let chatgpt_message = response_chatgpt.message().content.clone();
+        println!("{}", trade_legend);
 
-    //     // Try to parse the the response from ChatGPT and
-    //     // react to it appropriately.
-    //     // Self::react_to_signal(chatgpt_message, bot, trusted_user_id, exchange_client).await?;
+        // Feed the message to ChatGPT.
+        // let response_chatgpt = chatgpt_conversation.send_message(&trade_legend).await?;
 
-    //     // Remove a message from the history in order not to waste tokens.
-    //     chatgpt_conversation.history.truncate(1);
+        // let chatgpt_message = response_chatgpt.message().content.clone();
 
-    //     BotService::inform_client(bot, trusted_user_id, "<b>A potential signal!</b>💰").await?;
+        // Try to parse the the response from ChatGPT and
+        // react to it appropriately.
+        // Self::react_to_signal(chatgpt_message, bot, trusted_user_id, exchange_client).await?;
 
-    //     BotService::inform_client(bot, trusted_user_id, trade_legend).await?;
+        // Remove a message from the history in order not to waste tokens.
+        // chatgpt_conversation.history.truncate(2);
 
-    //     BotService::inform_client(bot, trusted_user_id, "💬<b>ChatGPT</b> said...👇👇👇").await?;
+        // BotService::inform_client(
+        //     &bot,
+        //     bot_state.log_channel_id,
+        //     "<b>A potential signal!</b>💰",
+        // )
+        // .await?;
 
-    //     // Respond to the user via Telegram bot about a trading decision.
-    //     BotService::inform_client(
-    //         bot,
-    //         trusted_user_id,
-    //         response_chatgpt.message().content.to_string(),
-    //     )
-    //     .await?;
+        // BotService::inform_client(&bot, bot_state.log_channel_id, trade_legend).await?;
 
-    //     Ok(chatgpt_conversation)
-    // } // end fn handle_message
+        // BotService::inform_client(
+        //     &bot,
+        //     bot_state.log_channel_id,
+        //     "💬<b>ChatGPT</b> said...👇👇👇",
+        // )
+        // .await?;
 
-    // /// This function tries to assemble a trade legend when it is possible.
-    // /// If it is just a message, it skips it.
-    // async fn assemble_trade_legend(mut message: Message, tg_client: &Client) -> Option<String> {
-    //     // Initialize an array that will be storing a trade legend.
-    //     let mut trade_legend: Vec<String> = Vec::new();
+        // // Respond to the user via Telegram bot about a trading decision.
+        // BotService::inform_client(
+        //     &bot,
+        //     bot_state.log_channel_id,
+        //     response_chatgpt.message().content.to_string(),
+        // )
+        // .await?;
 
-    //     // Check if the message is less than 4 symbols, then do not react.
-    //     if message.text().chars().count() < 4 {
-    //         // Do not react to the message.
-    //         return None;
-    //     } // end if
+        Ok(())
+    } // end fn handle_message
 
-    //     // Start adding messages to the legend till the top message.
-    //     loop {
-    //         // Push a message to the legend.
-    //         trade_legend.push(message.text().to_string());
+    /// This function tries to assemble a trade legend when it is possible.
+    /// If it is just a message, it skips it.
+    async fn assemble_trade_legend(
+        mut message: Message,
+        bot_state: BotState,
+    ) -> Result<Option<String>, AppError> {
+        // Initialize an array that will be storing a trade legend.
+        let mut trade_legend: Vec<String> = Vec::new();
 
-    //         // Check if the message is a reply to another message.
-    //         if let Some(msg_id) = message.reply_to_message_id() {
-    //             // Jump to a new message and repeat the loop.
-    //             // Fetch a message this message replies to.
-    //             message = tg_client
-    //                 .get_messages_by_id(message.chat(), &[msg_id])
-    //                 .await
-    //                 .unwrap()
-    //                 .pop()
-    //                 .unwrap()
-    //                 .unwrap();
-    //         } else {
-    //             // There are no more messages.
-    //             // The entire legend is assembled.
-    //             break;
-    //         } // end if
-    //     } // end loop
+        // Check if the message contains text.
+        if message.text().is_none() {
+            // There is no need to process the message,
+            // if it does not contain any text data.
+            return Ok(None);
+        } // end if
 
-    //     // Check if the last inserted message is a signal.
-    //     if Self::is_signal(trade_legend.last().unwrap()) {
-    //         // Convert the legend to string.
-    //         let trade_legend = Self::convert_legend_to_string(trade_legend);
-    //         // It is most likely to be a signal.
-    //         return Some(trade_legend);
-    //     } // end if
+        // Check if the message is less than 4 symbols, then do not react.
+        if message.text().unwrap().chars().count() < 4 {
+            // Do not react to the message.
+            return Ok(None);
+        } // end if
 
-    //     None
-    // } // end fn assemble_trade_snippet
+        // Get a connection to the database.
+        let conn = &mut DatabaseService::get_pool_connection(&bot_state.pg_connection_pool)
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Get the current message from the database.
+        let mut cur_msg = Self::get_message_from_db_by_id(message.id.0, conn)
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Start adding messages to the legend till the top message.
+        loop {
+            // Push a message to the legend.
+            trade_legend.push(cur_msg.message_text.unwrap_or(String::from("")));
+
+            // Check if the message is a reply to another message.
+            if let Some(previous_msg_id) = cur_msg.response_message_id {
+                // Jump to a new message and repeat the loop.
+                // Fetch a message this message replies to.
+                cur_msg = Self::get_message_from_db_by_id(previous_msg_id, conn)
+                    .map_err(|error| AppError::new(error.to_string()))?;
+            } else {
+                // There are no more messages.
+                // The entire legend is assembled.
+                break;
+            } // end if
+        } // end loop
+
+        println!("Legend:\n{:#?}", &trade_legend);
+
+        // Check if the last inserted message is a signal.
+        if Self::is_signal(trade_legend.last().unwrap()) {
+            // Convert the legend to string.
+            let trade_legend = Self::convert_legend_to_string(trade_legend);
+            // It is most likely to be a signal.
+            return Ok(Some(trade_legend));
+        } // end if
+
+        Ok(None)
+    } // end fn assemble_trade_snippet
 
     /// This function checks if a message is a signal or not
     /// (The role of the function is to eliminate the waste of tokens
@@ -179,14 +216,30 @@ impl MessageService {
         result
     } // end fn convert_legend_to_string
 
-    // This function parses the response from ChatGPT and reacts to
-    // it opening, closing or increasing positions on perpetual swaps in USDT.
+    /// This function retrieves a message from the database by message ID.
+    /// if an error occurs, the function logs the error and returns it.
+    fn get_message_from_db_by_id(
+        msg_id: i32,
+        conn: &mut PgConnection,
+    ) -> Result<ChannelHistory, diesel::result::Error> {
+        match ChannelHistory::get_from_db_by_id(msg_id, conn) {
+            Ok(cur_msg) => return Ok(cur_msg),
+            Err(error) => {
+                log::error!("{}", error);
+
+                return Err(error);
+            } // end Err
+        }; // end match
+    } // end fn get_message_from_db_by_id
+
+    /// This function parses the response from ChatGPT and reacts to
+    /// it opening, closing or increasing positions on perpetual swaps in USDT.
     // pub async fn react_to_signal(
     //     signal: String,
     //     bot: &Bot,
     //     trusted_user_id: i64,
     //     exchange_client: &crypto_botters::Client,
-    // ) -> Result<()> {
+    // ) -> OneResult<()> {
     //     // Try to parse the the response from ChatGPT and
     //     // react to it appropriately.
     //     if let Ok(position_opening) = serde_json::from_str::<PositionOpening>(&signal) {

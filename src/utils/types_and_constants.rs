@@ -2,9 +2,6 @@
 
 use std::error::Error;
 
-// Universal result type.
-pub type OneResult<T> = std::result::Result<T, Box<dyn Error>>;
-
 // The max length of ChatGPT history.
 // Currently out of use.
 pub const _CHAT_GPT_HISTORY_LENGTH: usize = 200;

@@ -1,7 +1,6 @@
 // This file contains a service with some useful features
 // for working with databases.
 
-use crate::utils::types_and_constants::OneResult;
 use diesel::{
     r2d2::{ConnectionManager, Pool, PooledConnection},
     PgConnection,
@@ -31,7 +30,7 @@ impl DatabaseService {
     /// from a pool of connections to a database.
     pub fn get_pool_connection(
         pool: &Pool<ConnectionManager<PgConnection>>,
-    ) -> OneResult<PooledConnection<ConnectionManager<PgConnection>>> {
+    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, diesel::r2d2::PoolError> {
         // Get a connection to the database.
         let conn = pool.get()?;
 
@@ -43,7 +42,7 @@ impl DatabaseService {
     /// or throws Bool error
     ///     true - if UniqueViolation error occurred.
     ///     false - any other error occurred.
-    pub fn try_unwrap_unique_violation_error<Obj>(
+    pub fn _try_unwrap_unique_violation_error<Obj>(
         res: &Result<Obj, diesel::result::Error>,
     ) -> Result<Obj, bool>
     where

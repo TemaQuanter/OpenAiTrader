@@ -1,6 +1,10 @@
 // This file contains all the functionality necessary to interact
 // with a user via Telegram bot.
 
+use std::sync::Arc;
+
+use chatgpt::prelude::Conversation;
+use chrono::Utc;
 use diesel::{
     r2d2::{ConnectionManager, Pool, PooledConnection},
     PgConnection,
@@ -17,14 +21,14 @@ use teloxide::{
     utils::command::BotCommands,
     Bot,
 };
-use tokio::task::JoinHandle;
+use tokio::{sync::Mutex, task::JoinHandle};
 
 use crate::{
-    db_objects::{role_model::RoleId, status_model::StatusId, user_model::User},
-    utils::{
-        database_service::DatabaseService,
-        types_and_constants::{OneResult, ERROR_MESSAGE},
+    db_objects::{
+        channel_history::ChannelHistory, role_model::RoleId, status_model::StatusId,
+        user_model::User,
     },
+    utils::{database_service::DatabaseService, types_and_constants::ERROR_MESSAGE},
 };
 
 use super::message_service::MessageService;
@@ -34,7 +38,14 @@ use super::message_service::MessageService;
 #[derive(Clone)]
 pub struct BotState {
     /// Database connection pool.
-    pub pg_connection_pool: Pool<ConnectionManager<PgConnection>>,
+    pub pg_connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
+    /// ChatGPT conversation.
+    pub chatgpt_conversation: Arc<Mutex<Conversation>>,
+    /// This is a trusted channel ID that the bot
+    /// gets trading signals from.
+    pub trusted_channel_id: i64,
+    /// This is a channel where the bot sends its logs.
+    pub log_channel_id: i64,
 } // end struct BotConfig
 
 /// These are all commands that the bot can handle for general user.
@@ -111,20 +122,26 @@ pub struct BotService;
 /// Implement all the functionality necessary to drive a Telegram
 /// bot.
 impl BotService {
-    /// This function initializes a telegram bot.
-    pub fn new_bot(tg_bot_api: &String) -> OneResult<Bot> {
-        let bot = Bot::new(tg_bot_api);
+    /// This function prompts a user for information.
+    pub async fn inform_client(
+        bot: &Bot,
+        chat_id: i64,
+        message: impl AsRef<str>,
+    ) -> ResponseResult<()> {
+        // Shadow chat ID for convenience.
+        let chat_id = ChatId(chat_id);
 
-        Ok(bot)
-    } // end fn new_bot
+        // Prompt a client for something.
+        bot.send_message(chat_id, message.as_ref())
+            .parse_mode(ParseMode::Html)
+            .await?;
+
+        Ok(())
+    } // end fn inform_client
 
     /// This function sets up a bot listener that handles every incoming message,
     /// whether it is a command, common message or anything other type.
-    pub async fn set_listener(
-        bot: Bot,
-        bot_state: BotState,
-        trusted_channel_id: i64,
-    ) -> JoinHandle<()> {
+    pub async fn set_listener(bot: Bot, bot_state: BotState) -> JoinHandle<()> {
         // A handler that determines the behavior of the bot in regards to
         // chat messages.
         let chat_handler = Update::filter_message()
@@ -151,7 +168,7 @@ impl BotService {
         // channel posts.
         let channel_handler = Update::filter_channel_post().branch(
             // Allow posts only from a trusted channel.
-            dptree::filter(move |msg: Message| msg.chat.id == ChatId(trusted_channel_id))
+            dptree::filter(move |msg: Message| msg.chat.id == ChatId(bot_state.trusted_channel_id))
                 .endpoint(Self::read_channel_post),
         ); // end Update::filter_message
 
@@ -870,7 +887,7 @@ impl BotService {
         let conn = &mut conn;
 
         // Verify the user.
-        let registered_user = match Self::get_user_and_verify_role(
+        let _registered_user = match Self::get_user_and_verify_role(
             &bot,
             &msg,
             registered_user,
@@ -934,10 +951,78 @@ impl BotService {
         Ok(())
     } // end fn handle_superuser_command
 
-    /// This function reads incoming messages.
-    async fn read_channel_post(bot: Bot, msg: Message) -> ResponseResult<()> {
-        println!("Got message!");
-        bot.send_dice(msg.chat.id).await?;
+    /// This function reads incoming posts from a trusted channel and reacts to them.
+    async fn read_channel_post(bot: Bot, msg: Message, bot_state: BotState) -> ResponseResult<()> {
+        // Get the connection to the database.
+        let conn = &mut match DatabaseService::get_pool_connection(&bot_state.pg_connection_pool) {
+            Ok(conn) => conn,
+            Err(error) => {
+                log::error!("{}", error);
+
+                // Inform a user about the error that occurred.
+                bot.send_message(
+                    ChatId(bot_state.log_channel_id),
+                    "Failed to connect to the database to save the post",
+                )
+                .await?;
+
+                return Ok(());
+            } // end Err
+        }; // end match
+
+        // Get the ID of the message the current message replies to.
+        let response_message_id = if let Some(response_msg) = msg.reply_to_message() {
+            // If the current message is a reply to any other message in the channel.
+            Some(response_msg.id.0)
+        } else {
+            // If this message does not reply to any other message in the channel.
+            None
+        }; // end if
+
+        // Get the message text.
+        let message_text = if let Some(msg_text) = msg.text() {
+            // The message contains some text.
+            Some(msg_text.to_string())
+        } else {
+            // The message does not contain any text.
+            None
+        }; // end if
+
+        // Save the post to database to be able to restore the message history in the future.
+        match ChannelHistory::insert_into_db(
+            &ChannelHistory {
+                message_id: msg.id.0,
+                response_message_id,
+                message_text,
+                message_timestamp: Utc::now(),
+            },
+            conn,
+        ) {
+            Ok(_) => (),
+            Err(error) => {
+                log::error!("{}", error);
+
+                // Log the error into the log channel.
+                bot.send_message(
+                    ChatId(bot_state.log_channel_id),
+                    "Failed to save a new post to the database...",
+                )
+                .await?;
+
+                return Ok(());
+            } // end Err
+        } // end match
+
+        // Handle a new post.
+        match MessageService::handle_message(msg, bot_state, &bot).await {
+            Ok(_) => {
+                log::info!("Successfully processed a post!");
+            }
+            Err(error) => {
+                log::error!("{}", error);
+            } // end match
+        } // end match
+
         Ok(())
     } // end fn read_channel_post
 

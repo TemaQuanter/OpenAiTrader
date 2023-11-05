@@ -1,6 +1,15 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    channel_history (message_id) {
+        message_id -> Int4,
+        response_message_id -> Nullable<Int4>,
+        message_text -> Nullable<Text>,
+        message_timestamp -> Timestamptz,
+    }
+}
+
+diesel::table! {
     role (role_id) {
         role_id -> Int4,
         title -> Varchar,
@@ -34,6 +43,7 @@ diesel::joinable!(users -> role (role_id));
 diesel::joinable!(users -> status (status_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    channel_history,
     role,
     status,
     users,
