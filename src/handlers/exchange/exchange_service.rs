@@ -1,27 +1,31 @@
 // This file contains all the functionality to interact with
 // Bybit cryptocurrency exchange.
 
-use std::collections::HashSet;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use crypto_botters::{
-    bybit::{BybitHttpAuth, BybitOption},
+    bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
     Client,
 };
 use serde_json::json;
 
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinHandle;
 
 use crate::{
+    db_objects::{status_model::StatusId, user_model::User},
     handlers::{
-        bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+        bot::{
+            bot_service::BotState,
+            dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+        },
         exchange::dto::OpenedOrder,
     },
-    utils::types_and_constants::OneResult,
+    utils::{app_error::AppError, database_service::DatabaseService},
 };
 
-use super::{dto::OpenedPosition, error::ExchangeError};
+use super::dto::OpenedPosition;
 
 /// This struct contains all the functionality to interact
 /// with Bybit cryptocurrency exchange.
@@ -31,19 +35,102 @@ pub struct ExchangeService;
 /// Bybit cryptocurrency exchange.
 impl ExchangeService {
     /// This function creates an exchange client.
-    pub fn get_client(api: String, secret: String) -> OneResult<Client> {
+    pub fn get_client(api: String, secret: String) -> Client {
         let mut client = Client::new();
 
         // Authorize the client.
         client.update_default_option(BybitOption::Key(api));
         client.update_default_option(BybitOption::Secret(secret));
 
-        Ok(client)
+        client
     } // end fn get_client
+
+    /// This function checks whether or not a candidate user is
+    /// eligible to trade.
+    ///
+    /// The function returns true - if the user is eligible to trade,
+    /// The function returns false otherwise.
+    async fn is_eligible_to_trade(candidate: &User) -> bool {
+        // If the user did not allow the bot to trade for them,
+        // then they are not eligible.
+        if !candidate.bot_active {
+            return false;
+        } // end if
+
+        // Check if the user provided their exchange credentials.
+        if candidate.exchange_api_key.is_none() || candidate.exchange_api_secret.is_none() {
+            return false;
+        } // end if
+
+        // Get candidate's credentials.
+        let exchange_api_key = candidate.exchange_api_key.clone().unwrap();
+        let exchange_api_secret = candidate.exchange_api_secret.clone().unwrap();
+
+        // Check if the user's account is reachable.
+        let client = Self::get_client(exchange_api_key, exchange_api_secret);
+
+        // Try to get the candidate's balance.
+        let balance = match Self::get_uta_usdt_balance(&client).await {
+            Ok(balance) => balance,
+            Err(_error) => {
+                // The candidate's account is unreachable.
+                return false;
+            }
+        };
+
+        // Check if their balance is over some minimum limit.
+        if balance < dec!(500) {
+            return false;
+        } // end if
+
+        // The candidate passed all checks and is eligible to trade.
+        true
+    } // end fn is_eligible_to_trade
+
+    /// This function gets an array of users who are eligible to trade
+    async fn get_users_eligible_to_trade(bot_state: BotState) -> Result<Vec<User>, AppError> {
+        // Try to establish a connection to the database.
+        let conn = &mut match DatabaseService::try_get_pool_connection(
+            &bot_state.pg_connection_pool,
+        )
+        .await
+        {
+            Ok(conn) => conn,
+            Err(error) => {
+                log::error!("{}", error);
+
+                // Return an error that it was impossible to connect to the database.
+                return Err(AppError::new(
+                    "Failed to connect to the database to open a new position",
+                ));
+            } // end Err
+        }; // end match
+
+        // Retrieve all approved users from the database.
+        let approved_users =
+            User::get_users_with_status(&StatusId::Approved, conn).map_err(|_error| {
+                AppError::new("Failed to retrieve the users for opening a new position")
+            })?;
+        // Create an array of eligible to trade users.
+
+        let mut eligible_users: Vec<User> = Vec::new();
+
+        // Traverse the array of users and select only those who are
+        // eligible for trading.
+        for candidate in approved_users {
+            // Check if the candidate is eligible to trade.
+            if Self::is_eligible_to_trade(&candidate).await {
+                // Add the candidate to eligible users.
+                eligible_users.push(candidate);
+            } // end if
+        } // end for
+
+        Ok(eligible_users)
+    } // end get_users_eligible_to_trade
 
     /// This function returns the amount of USDT on Unified Trading Account.
     /// Value is returned in USDT.
-    pub async fn get_uta_usdt_balance(client: &Client) -> OneResult<Decimal> {
+    pub async fn get_uta_usdt_balance(client: &Client) -> Result<Decimal, AppError> {
         // Get the information about USDT balance on UTA.
         let response: serde_json::Value = client
             .get(
@@ -51,7 +138,8 @@ impl ExchangeService {
                 Some(&[("accountType", "UNIFIED"), ("coin", "USDT")]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Return the balance of the wallet in USDT.
         Ok(Decimal::from_str_exact(
@@ -62,105 +150,11 @@ impl ExchangeService {
         .unwrap())
     } // end fn get_uta_usdt_balance
 
-    /// This function monitors opened conditional orders
-    /// and removes the legacy orders that remained opened
-    /// after the closure of a position.
-    pub async fn monitor_and_clear_legacy_conditional_orders(
-        client: &Client,
-        mut rx_exchange_monitoring: Receiver<String>,
-    ) -> OneResult<()> {
-        // This variable determines whether or not the monitoring
-        // is allowed to work.
-        let mut monitoring_working = true;
-
-        // Endless loop that constantly checks for legacy conditional orders
-        // and removes them if they remain.
-        loop {
-            // Check if there is a message to react on.
-            if let Ok(msg) = rx_exchange_monitoring.try_recv() {
-                // There is a message.
-
-                // Check if the message is to stop the monitoring.
-                if msg == "stop" {
-                    // The monitoring has to be stopped.
-                    monitoring_working = false;
-
-                    // Go to the beginning of the loop.
-                    continue;
-                } else if msg == "resume" {
-                    // The monitoring should be resumed.
-                    monitoring_working = true;
-                } // end if
-            } // end if
-
-            // Check if the monitoring is allowed to work.
-            if !monitoring_working {
-                // The monitoring is not allowed to work.
-
-                // Stop the task for some time.
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-                // Get to the beginning of the loop.
-                continue;
-            } // end if
-
-            // Get all the opened positions.
-            let opened_positions = Self::get_all_opened_positions(client).await?;
-
-            // Get all the opened orders.
-            let opened_orders = Self::get_all_opened_orders(client).await?;
-
-            // A set of tickers that have reduce only orders.
-            // A pair: ticker, position idx.
-            let mut reduce_only_tickers: HashSet<(String, i32)> = HashSet::new();
-
-            // Add all the tickers to the set.
-            for opened_order in opened_orders.iter() {
-                reduce_only_tickers
-                    .insert((opened_order.ticker.clone(), opened_order.position_idx));
-            } // end for
-
-            // Traverse all the opened orders and remove the tickers
-            // that have non-reduce-only orders opened.
-            for opened_order in opened_orders.iter() {
-                // Check if it a non-reduce-only order.
-                if !opened_order.reduce_only {
-                    // Remove the order from the set.
-                    reduce_only_tickers
-                        .remove(&(opened_order.ticker.clone(), opened_order.position_idx));
-                } // end if
-            } // end for
-
-            // Traverse all the opened positions and remove the tickers
-            // that have an opened position.
-            for opened_position in opened_positions.iter() {
-                reduce_only_tickers.remove(&(
-                    opened_position.ticker.to_string(),
-                    opened_position.position_idx,
-                ));
-            } // end for
-
-            // All the tickers that remained in the set are
-            // legacy conditional orders.
-            // Remove them.
-            for opened_order in opened_orders.iter() {
-                // Check if this is a legacy order.
-                if reduce_only_tickers
-                    .contains(&(opened_order.ticker.to_string(), opened_order.position_idx))
-                {
-                    // This is a legacy order, remove it.
-                    Self::cancel_order_on_perpetual_swaps(client, opened_order).await?;
-                } // end if
-            } // end for
-
-            // Wait for some time before checking again.
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        } // end loop
-    } // end fn monitor_and_clear_legacy_conditional_orders
-
     /// This function returns all the current opened
     /// perpetual swaps positions on UTA.
-    pub async fn get_all_opened_positions(client: &Client) -> OneResult<Vec<OpenedPosition>> {
+    pub async fn get_all_opened_positions(
+        client: &Client,
+    ) -> Result<Vec<OpenedPosition>, AppError> {
         // Send a request and get the information about opened positions.
         let response: serde_json::Value = client
             .get(
@@ -168,7 +162,8 @@ impl ExchangeService {
                 Some(&[("category", "linear"), ("settleCoin", "USDT")]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Parse the data into a DTO.
 
@@ -181,7 +176,7 @@ impl ExchangeService {
         // Traverse each raw position and parse it into a structure.
         for raw_position in opened_positions_raw {
             // Parse an opened position into a struct.
-            let position = Self::parse_opened_position(raw_position)?;
+            let position = Self::parse_opened_position(raw_position);
 
             // Insert the parsed position into the array.
             opened_positions.push(position);
@@ -191,7 +186,7 @@ impl ExchangeService {
     } // end fn get_all_opened_positions
 
     /// This function returns all opened orders on perpetual swaps in USDT.
-    pub async fn get_all_opened_orders(client: &Client) -> OneResult<Vec<OpenedOrder>> {
+    pub async fn get_all_opened_orders(client: &Client) -> Result<Vec<OpenedOrder>, AppError> {
         // Send a request and get the information about opened orders.
         let response: serde_json::Value = client
             .get(
@@ -199,7 +194,8 @@ impl ExchangeService {
                 Some(&[("category", "linear"), ("settleCoin", "USDT")]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Parse the data into a DTO.
 
@@ -212,7 +208,7 @@ impl ExchangeService {
         // Traverse each raw order and parse it into a structure.
         for raw_order in opened_orders_raw {
             // Parse an opened order into a struct.
-            let order = Self::parse_opened_order(raw_order)?;
+            let order = Self::parse_opened_order(raw_order);
 
             // Insert the parsed order into the array.
             opened_orders.push(order);
@@ -221,11 +217,68 @@ impl ExchangeService {
         Ok(opened_orders)
     } // end fn get_all_opened_orders
 
+    /// This function opens a position on perpetual swaps for every single user
+    /// asynchronously.
+    // pub async fn execute_exchange_order_for_all_users<T, Out>(
+    //     exchange_order: Arc<T>,
+    //     func: Fn() -> Out,
+    //     bot_state: BotState,
+    // ) -> Result<(i32, i32), AppError>
+    // where
+    //     T: Sync + Send + 'static,
+    //     Out: Future,
+    // {
+    //     // Get an array of users who can trade.
+    //     let eligible_users = Self::get_users_eligible_to_trade(bot_state).await?;
+
+    //     // An array that stores all asynchronous tasks.
+    //     let mut async_tasks: Vec<JoinHandle<Result<(), AppError>>> = Vec::new();
+
+    //     // Spawn a task for each user to execute the orders asynchronously.
+    //     for user in eligible_users {
+    //         // Clone the reference to the position opening.
+    //         let exchange_order_clone = Arc::clone(&exchange_order);
+
+    //         // Create a new task.
+    //         let new_task = tokio::spawn(async move {
+    //             // Get user credentials.
+    //             let api_key = user.exchange_api_key.unwrap();
+    //             let api_secret = user.exchange_api_secret.unwrap();
+
+    //             // Get an exchange client.
+    //             let client = Self::get_client(api_key, api_secret);
+
+    //             // Try to open a position on perpetual swaps.
+    //             func(exchange_order_clone, &client).await
+    //         });
+
+    //         // Add the task to the array of running tasks.
+    //         async_tasks.push(new_task);
+    //     } // end for
+
+    //     // Count positive and negative results.
+    //     let mut positive_results = 0;
+    //     let mut negative_results = 0;
+
+    //     // Wait for all tasks to complete.
+    //     for tsk in async_tasks {
+    //         if let Err(error) = tsk.await {
+    //             // The task finished with error.
+    //             negative_results += 1;
+
+    //             log::error!("{}", error);
+    //         } else {
+    //             // The result was OK.
+    //             positive_results += 1;
+    //         } // end if
+    //     } // end for
+
+    //     return Ok((positive_results, negative_results));
+    // } // end open_position_on_perpetual_swaps_all_users
+
     /// This function parses the raw JSON object with an opened position
     /// into a structure.
-    pub fn parse_opened_position(
-        raw_opened_position: &serde_json::Value,
-    ) -> OneResult<OpenedPosition> {
+    pub fn parse_opened_position(raw_opened_position: &serde_json::Value) -> OpenedPosition {
         // Try to parse the object into a structure.
         //
         // P.S There are extra double quotes that it is necessary
@@ -262,12 +315,12 @@ impl ExchangeService {
                 .unwrap(),
         }; // end opened_position
 
-        Ok(opened_position)
+        opened_position
     } // end fn parse_opened_position
 
     /// This function parses the raw JSON object with an opened position
     /// into a structure.
-    pub fn parse_opened_order(raw_opened_order: &serde_json::Value) -> OneResult<OpenedOrder> {
+    pub fn parse_opened_order(raw_opened_order: &serde_json::Value) -> OpenedOrder {
         // Try to parse the object into a structure.
         //
         // P.S There are extra double quotes that it is necessary
@@ -291,7 +344,7 @@ impl ExchangeService {
                 .unwrap(),
         }; // end opened_order
 
-        Ok(opened_order)
+        opened_order
     } // end fn parse_opened_order
 
     /// This function retrieves the current price of an instrument
@@ -299,7 +352,7 @@ impl ExchangeService {
     pub async fn get_instrument_price_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> OneResult<Decimal> {
+    ) -> Result<Decimal, BybitRequestError> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -325,7 +378,7 @@ impl ExchangeService {
     pub async fn get_price_step_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> OneResult<Decimal> {
+    ) -> Result<Decimal, AppError> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -333,7 +386,8 @@ impl ExchangeService {
                 Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Get the quantity step for the instrument.
         let price_step = Decimal::from_str_exact(
@@ -351,7 +405,7 @@ impl ExchangeService {
     pub async fn get_quantity_step_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> OneResult<Decimal> {
+    ) -> Result<Decimal, AppError> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -359,7 +413,8 @@ impl ExchangeService {
                 Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Get the quantity step for the instrument.
         let quantity_step = Decimal::from_str_exact(
@@ -375,9 +430,9 @@ impl ExchangeService {
     /// This function opens a new position on perpetual swaps
     /// in USDT.
     pub async fn open_position_on_perpetual_swaps(
-        position_opening: &PositionOpening,
+        position_opening: Arc<PositionOpening>,
         client: &Client,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // Make a copy of the position to modify it later.
         let mut position_opening = (*position_opening).clone();
 
@@ -432,7 +487,7 @@ impl ExchangeService {
             position_idx = 2;
         } else {
             // It is most likely to be an error.
-            return Err(ExchangeError::new("Failed to parse position side").into());
+            return Err(AppError::new("Failed to parse position side"));
         } // end if
 
         // Get the current price of the contract.
@@ -445,7 +500,8 @@ impl ExchangeService {
                 trigger_price = None;
 
                 Self::get_instrument_price_on_perpetual_swaps(client, &position_opening.ticker)
-                    .await?
+                    .await
+                    .map_err(|error| AppError::new(error.to_string()))?
             } // end "market"
             "conditional" => {
                 // Set parameters required to place a conditional order.
@@ -466,12 +522,14 @@ impl ExchangeService {
 
                 position_opening.lower_bound_entry
             } // end "conditional"
-            _ => return Err(ExchangeError::new("Failed to parse order type").into()),
+            _ => return Err(AppError::new("Failed to parse order type")),
         }; // end match
 
         // Get the current market price of the contract.
         let cur_market_price =
-            Self::get_instrument_price_on_perpetual_swaps(client, &position_opening.ticker).await?;
+            Self::get_instrument_price_on_perpetual_swaps(client, &position_opening.ticker)
+                .await
+                .map_err(|error| AppError::new(error.to_string()))?;
 
         // If the current market price is lower than the lower bound of the entry price
         // for long position or higher than the upper bound for short position,
@@ -483,17 +541,15 @@ impl ExchangeService {
             if position_opening.direction == "Buy"
                 && position_opening.lower_bound_entry > cur_market_price
             {
-                return Err(ExchangeError::new(
+                return Err(AppError::new(
                     "The market price is lower than the minimum entry price",
-                )
-                .into()); // end return
+                )); // end return
             } else if position_opening.direction == "Short"
                 && position_opening.lower_bound_entry < cur_market_price
             {
-                return Err(ExchangeError::new(
+                return Err(AppError::new(
                     "The market price is higher than the minimum entry price",
-                )
-                .into()); // end return
+                )); // end return
             } // end if
         } // end if
 
@@ -513,7 +569,9 @@ impl ExchangeService {
 
         // Get the quantity step for the instrument.
         let quantity_step =
-            &Self::get_quantity_step_on_perpetual_swaps(client, &position_opening.ticker).await?;
+            &Self::get_quantity_step_on_perpetual_swaps(client, &position_opening.ticker)
+                .await
+                .map_err(|error| AppError::new(error.to_string()))?;
 
         // Adjust the quantity according to the quantity step.
         let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
@@ -531,7 +589,9 @@ impl ExchangeService {
         }; // end if
 
         // Set a position mode to hedge-mode.
-        Self::set_hedge_mode_on_perpetual_swaps(client, &position_opening.ticker).await?;
+        Self::set_hedge_mode_on_perpetual_swaps(client, &position_opening.ticker)
+            .await
+            .map_err(|error| AppError::new(error.to_string()));
 
         // Setup the leverage.
         Self::set_leverage(client, &position_opening.ticker, leverage).await?;
@@ -572,7 +632,7 @@ impl ExchangeService {
         // Verify that the position is safe to open.
         // This function will generate and return an error,
         // if it is unsafe to open a position.
-        Self::verify_position(&position_opening, client).await?;
+        Self::verify_position(&position_opening).await?;
 
         // Send a request to open a position on perpetual swaps.
         let response: serde_json::Value = client
@@ -581,7 +641,8 @@ impl ExchangeService {
                 Some(post_request),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // The number of partial take profits to set.
         // It is float, as it is necessary for further calculations.
@@ -631,32 +692,7 @@ impl ExchangeService {
     pub async fn close_part_of_position_on_perpetual_swaps(
         position_closure: &PositionClosure,
         client: &Client,
-    ) -> OneResult<()> {
-        // Remove all conditional orders related to the position and
-        // get the information on whether or not it is necessary to
-        // remove an actual position or it was a conditional order
-        // that has not got executed yet.
-        //
-        // ATTENTION: The instruction above are valid ONLY if it
-        // is necessary to close the entire position. For partial
-        // position closure the instructions above are not valid!
-        if position_closure.percentage_to_close == dec!(100.0) {
-            // Close the related conditional orders and check
-            // whether or not it is necessary to continue closing
-            // the actual orders.
-            if Self::remove_all_conditional_orders_on_perpetual_swaps(
-                client,
-                &position_closure.ticker,
-                &position_closure.direction,
-            )
-            .await?
-            {
-                // It is unnecessary to close any positions.
-                // In this case all the required operations are done.
-                return Ok(());
-            } // end if
-        } // end if
-
+    ) -> Result<(), AppError> {
         // Get all the currently opened position.
         let opened_positions = Self::get_all_opened_positions(client).await?;
 
@@ -682,7 +718,7 @@ impl ExchangeService {
 
         // If the position was not found, then return an error.
         if cur_position.is_none() {
-            return Err(ExchangeError::new("The position to close is not found").into());
+            return Err(AppError::new("The position to close is not found"));
         } // end if
 
         // Safely unwrap the position.
@@ -765,7 +801,8 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn close_part_of_position_on_perpetual_swaps
@@ -775,7 +812,7 @@ impl ExchangeService {
     pub async fn adjust_stop_loss_on_perpetual_swaps(
         stop_loss_adjustment: &StopLossAdjustment,
         client: &Client,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // This variable shows the side of the opened position.
         let position_side: &str;
 
@@ -791,6 +828,7 @@ impl ExchangeService {
 
         // A position that it is required to adjust a stop loss of.
         let mut cur_position: Option<OpenedPosition> = None;
+
         // Get all the currently opened positions.
         let opened_positions = Self::get_all_opened_positions(client).await?;
 
@@ -810,10 +848,9 @@ impl ExchangeService {
         // Check if the current position was found.
         if cur_position.is_none() {
             // The position was not found.
-            return Err(ExchangeError::new(
+            return Err(AppError::new(
                 "The position to adjust the stop loss of was not found",
-            )
-            .into()); // end return
+            )); // end return
         } // end if
 
         // Safely unwrap the position.
@@ -828,7 +865,7 @@ impl ExchangeService {
                 && (stop_loss_adjustment.new_stop > cur_position.stop_loss_price))
         {
             // Reject the operation.
-            return Err(ExchangeError::new("Stop loss cannot increase the position risk").into());
+            return Err(AppError::new("Stop loss cannot increase the position risk"));
         } // end if
 
         // Get all the opened orders.
@@ -852,9 +889,9 @@ impl ExchangeService {
 
         // If the order was not found, then return error.
         if cur_order.is_none() {
-            return Err(
-                ExchangeError::new("The order was not found for stop loss adjustment").into(),
-            );
+            return Err(AppError::new(
+                "The order was not found for stop loss adjustment",
+            ));
         } // end if
 
         // Safely unwrap the order.
@@ -872,7 +909,8 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn adjust_stop_loss_on_perpetual_swaps
@@ -883,7 +921,7 @@ impl ExchangeService {
         client: &Client,
         ticker: &String,
         leverage: Decimal,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // Send a request to adjust a leverage on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -896,7 +934,8 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn set_leverage
@@ -905,7 +944,7 @@ impl ExchangeService {
     pub async fn set_hedge_mode_on_perpetual_swaps(
         client: &Client,
         ticker: &String,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // Send a request to set a position in a hedge-mode on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -917,77 +956,17 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn set_hedge_mode_on_perpetual_swaps
-
-    /// This function removes all conditional orders of a particular
-    /// contract on perpetual swaps in USDT.
-    ///
-    /// The function returns True if a conditional order with the position to close
-    /// was found and removed (necessary not to close the position itself if
-    /// the order did not get executed). Otherwise the function returns false.
-    pub async fn remove_all_conditional_orders_on_perpetual_swaps(
-        client: &Client,
-        ticker: &String,
-        side: &String,
-    ) -> OneResult<bool> {
-        // Get a copy of the ticker.
-        // It is required for further part of the code.
-        let ticker = ticker.to_string();
-
-        // Get all the opened orders.
-        let opened_orders = Self::get_all_opened_orders(client).await?;
-
-        // This variable stores the OneResult of the function.
-        let mut order_removed = false;
-
-        // This parameter is required to work with orders in a hedge-mode.
-        let position_idx: i32;
-
-        // Convert the side from (short/long) into (Sell/Buy).
-        // Determine the opposite side at the same time.
-        // Set the proper position idx.
-        let side = if side.to_lowercase() == "long" {
-            position_idx = 1;
-            "Buy"
-        } else {
-            position_idx = 2;
-            "Sell"
-        }; // end if
-
-        // Traverse all the opened orders and find the orders that have to
-        // be removed.
-        for opened_order in opened_orders {
-            // Check if the order ticker and position idx match
-            // the orders that are searched for.
-            if opened_order.ticker == ticker && opened_order.position_idx == position_idx {
-                // It is one of the positions searched for.
-
-                // Check if this order was meant to open a position.
-                if opened_order.side == side {
-                    // This is the order that was meant to open a new position.
-                    order_removed = true;
-                } // end if
-
-                // Cancel the order.
-                // Cancel only stop orders. (Stop losses and Take profits (partial and full)
-                // will be closed automatically, when the trade is closed)
-                if opened_order.stop_order_type == "Stop" {
-                    Self::cancel_order_on_perpetual_swaps(client, &opened_order).await?;
-                } // end if
-            } // end if
-        } // end for
-
-        Ok(order_removed)
-    } // end fn remove_all_conditional_orders_on_perpetual_swaps
 
     /// This function cancels an opened order on perpetual swaps in USDT.
     pub async fn cancel_order_on_perpetual_swaps(
         client: &Client,
         order: &OpenedOrder,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // Send a request to cancel an order on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -999,7 +978,8 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn cancel_order_on_perpetual_swaps
@@ -1008,51 +988,12 @@ impl ExchangeService {
     /// It is kind of a safety guard to prevent unexpected losses.
     /// It returns True, if the position opening passed the verification.
     /// False - otherwise.
-    pub async fn verify_position(
-        position_opening: &PositionOpening,
-        client: &Client,
-    ) -> OneResult<()> {
+    pub async fn verify_position(position_opening: &PositionOpening) -> Result<(), AppError> {
         // Make sure the risk is not greater than 1.
         if position_opening.risk > dec!(1.0) || position_opening.risk < dec!(0.0) {
             // It is not safe to get into such a position.
-            return Err(ExchangeError::new("The risk must be in the rage from 0 to 1").into());
+            return Err(AppError::new("The risk must be in the rage from 0 to 1"));
         } // end if
-
-        // Get all the position that are currently active.
-        let active_positions = Self::get_all_opened_positions(client).await?;
-
-        // Traverse all the opened positions and make sure that the position
-        // is not opened yet.
-        for active_position in active_positions {
-            // Check if the ticker and the direction are the same,
-            // then not allow to open a position, as it is already active.
-            if active_position.ticker == position_opening.ticker
-                && active_position.side == position_opening.direction
-            {
-                // Reject the request to open a position.
-                return Err(ExchangeError::new("The position is already opened").into());
-            } // end if
-        } // end for
-
-        // Get all the orders that are currently opened.
-        let opened_orders = Self::get_all_opened_orders(client).await?;
-
-        // Traverse all the opened orders and make sure that the order is not
-        // opened yet.
-        for opened_order in opened_orders {
-            // Check if the ticker and the direction are the same,
-            // then not allow to place an order, as it is already placed.
-            //
-            // Order type "Stop" means that this is a conditional order
-            // to get into a position.
-            if opened_order.stop_order_type == "Stop"
-                && opened_order.ticker == position_opening.ticker
-                && opened_order.side == position_opening.direction
-            {
-                // Reject the request to place the order.
-                return Err(ExchangeError::new("The order is already placed").into());
-            } // end if
-        } // end for
 
         // The verification is passed, allow to proceed.
         Ok(())
@@ -1065,7 +1006,7 @@ impl ExchangeService {
         position_side: &String,
         trigger_price: String,
         qty: String,
-    ) -> OneResult<()> {
+    ) -> Result<(), AppError> {
         // The opposite direction to close the position.
         let side: &str;
 
@@ -1107,7 +1048,8 @@ impl ExchangeService {
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         Self::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order
@@ -1115,10 +1057,17 @@ impl ExchangeService {
     /// This function validates the response code from an exchange.
     /// If the response code is different from 0, then it generates
     /// an error and returns it.
-    pub fn validate_exchange_response(response: &serde_json::Value) -> OneResult<()> {
+    pub fn validate_exchange_response(response: &serde_json::Value) -> Result<(), AppError> {
         // This is a set of codes that can be considered as success.
         // NOTE: To check the codes, visit Bybit API documentation.
-        let success_codes = vec![0, 110025, 110026, 110027, 110043];
+        let success_codes = vec![
+            0,      // OK
+            110025, // Position mode has not been modified.
+            110026, // Cross/isolated margin mode has not been modified.
+            110027, // Margin has not been modified.
+            110028, // You have existing open orders, so the position mode cannot be switched.
+            110043, // Set leverage has not been modified.
+        ];
 
         // Get the error code as a number.
         let response_code = response["retCode"]
@@ -1136,6 +1085,8 @@ impl ExchangeService {
         // Otherwise there is an error in the response.
         // Return an error with the error message received from the
         // exchange.
-        return Err(ExchangeError::new(&response["retMsg"].to_string().replace("\"", "")).into());
+        return Err(AppError::new(
+            &response["retMsg"].to_string().replace("\"", ""),
+        ));
     } // end fn validate_exchange_response
 } // end impl ExchangeService

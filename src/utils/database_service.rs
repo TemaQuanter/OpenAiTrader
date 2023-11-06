@@ -37,6 +37,52 @@ impl DatabaseService {
         Ok(conn)
     } // end fn get_pool_connection
 
+    /// This function attempts to get a pooled database connection
+    /// several times, but when all attempts are used, it returns an error.
+    pub async fn try_get_pool_connection(
+        pool: &Pool<ConnectionManager<PgConnection>>,
+    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, diesel::r2d2::PoolError> {
+        // Save the last error if the connection could not be established.
+        let mut last_error: Option<diesel::r2d2::PoolError> = None;
+
+        // Declare the number of attempts to make to establish the connection
+        // with the database.
+        let attempts = 3;
+
+        // This loop is necessary to make several attempts to connect to the database
+        // if an attempt fails at first.
+        for attempt in 0..attempts {
+            // Get a connection to the database.
+            let conn = match DatabaseService::get_pool_connection(pool) {
+                Ok(conn) => Some(conn),
+                Err(error) => {
+                    // There was an error while trying to access the database.
+                    log::error!("{}", error);
+
+                    // Save the latest error.
+                    last_error = Some(error);
+
+                    None
+                } // end Err
+            }; // end match
+
+            // Check if it was possible to get a connection.
+            if conn.is_some() {
+                // the connection was established successfully.
+                return Ok(conn.unwrap());
+            } // end if
+
+            // Check if it is not the last attempt.
+            if attempt < attempts - 1 {
+                // If the connection was not established, then wait for some time and repeat the attempt.
+                tokio::time::sleep(tokio::time::Duration::from_secs(3));
+            } // end if
+        } // end for
+
+        // If all attempts were unsuccessful, then return the last error.
+        return Err(last_error.unwrap());
+    } // end try_get_pool_connection
+
     /// This function is a wrapper on UniqueViolation error.
     /// It returns an object, if the result is Ok
     /// or throws Bool error

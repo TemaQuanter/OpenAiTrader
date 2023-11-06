@@ -4,7 +4,7 @@
 -- Create table.
 CREATE TABLE channel_history(
     message_id INT PRIMARY KEY,
-    response_message_id INT REFERENCES channel_history (message_id),
+    response_message_id INT,
     message_text TEXT,
     message_timestamp TIMESTAMP WITH TIME ZONE NOT NULL
 ); -- end create table channel_history
