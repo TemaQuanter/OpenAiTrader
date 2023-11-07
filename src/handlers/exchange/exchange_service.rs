@@ -1,7 +1,7 @@
 // This file contains all the functionality to interact with
 // Bybit cryptocurrency exchange.
 
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{future::Future, sync::Arc};
 
 use crypto_botters::{
     bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
@@ -219,62 +219,62 @@ impl ExchangeService {
 
     /// This function opens a position on perpetual swaps for every single user
     /// asynchronously.
-    // pub async fn execute_exchange_order_for_all_users<T, Out>(
-    //     exchange_order: Arc<T>,
-    //     func: Fn() -> Out,
-    //     bot_state: BotState,
-    // ) -> Result<(i32, i32), AppError>
-    // where
-    //     T: Sync + Send + 'static,
-    //     Out: Future,
-    // {
-    //     // Get an array of users who can trade.
-    //     let eligible_users = Self::get_users_eligible_to_trade(bot_state).await?;
+    pub async fn execute_exchange_order_for_all_users<T, Out>(
+        exchange_order: Arc<T>,
+        func: fn(Arc<T>, &Client) -> Out,
+        bot_state: BotState,
+    ) -> Result<(i32, i32), AppError>
+    where
+        T: Send + Sync + 'static,
+        Out: Future<Output = Result<(), AppError>> + Send + 'static,
+    {
+        // Get an array of users who can trade.
+        let eligible_users = Self::get_users_eligible_to_trade(bot_state).await?;
 
-    //     // An array that stores all asynchronous tasks.
-    //     let mut async_tasks: Vec<JoinHandle<Result<(), AppError>>> = Vec::new();
+        // An array that stores all asynchronous tasks.
+        let mut async_tasks: Vec<JoinHandle<Result<(), AppError>>> = Vec::new();
 
-    //     // Spawn a task for each user to execute the orders asynchronously.
-    //     for user in eligible_users {
-    //         // Clone the reference to the position opening.
-    //         let exchange_order_clone = Arc::clone(&exchange_order);
+        // Spawn a task for each user to execute the orders asynchronously.
+        for user in eligible_users {
+            // Clone the reference to the position opening.
+            let exchange_order_clone = Arc::clone(&exchange_order);
 
-    //         // Create a new task.
-    //         let new_task = tokio::spawn(async move {
-    //             // Get user credentials.
-    //             let api_key = user.exchange_api_key.unwrap();
-    //             let api_secret = user.exchange_api_secret.unwrap();
+            // Create a new task.
+            let new_task = tokio::spawn(async move {
+                // Get user credentials.
+                let api_key = user.exchange_api_key.unwrap();
+                let api_secret = user.exchange_api_secret.unwrap();
 
-    //             // Get an exchange client.
-    //             let client = Self::get_client(api_key, api_secret);
+                // Get an exchange client.
+                let client = Self::get_client(api_key, api_secret);
 
-    //             // Try to open a position on perpetual swaps.
-    //             func(exchange_order_clone, &client).await
-    //         });
+                // Try to open a position on perpetual swaps.
+                func(exchange_order_clone, &client).await
+            });
 
-    //         // Add the task to the array of running tasks.
-    //         async_tasks.push(new_task);
-    //     } // end for
+            // Add the task to the array of running tasks.
+            async_tasks.push(new_task);
+        } // end for
 
-    //     // Count positive and negative results.
-    //     let mut positive_results = 0;
-    //     let mut negative_results = 0;
+        // Count positive and negative results.
+        let mut positive_results = 0;
+        let mut negative_results = 0;
 
-    //     // Wait for all tasks to complete.
-    //     for tsk in async_tasks {
-    //         if let Err(error) = tsk.await {
-    //             // The task finished with error.
-    //             negative_results += 1;
+        // Wait for all tasks to complete.
+        for tsk in async_tasks {
+            if let Err(error) = tsk.await {
+                // The task finished with error.
+                negative_results += 1;
 
-    //             log::error!("{}", error);
-    //         } else {
-    //             // The result was OK.
-    //             positive_results += 1;
-    //         } // end if
-    //     } // end for
+                log::error!("{}", error);
+            } else {
+                // The result was OK.
+                positive_results += 1;
+            } // end if
+        } // end for
 
-    //     return Ok((positive_results, negative_results));
-    // } // end open_position_on_perpetual_swaps_all_users
+        return Ok((positive_results, negative_results));
+    } // end fn execute_exchange_order_for_all_users
 
     /// This function parses the raw JSON object with an opened position
     /// into a structure.
