@@ -3,18 +3,12 @@
 
 use std::sync::Arc;
 
-use chatgpt::prelude::Conversation;
 use chrono::Utc;
-use diesel::{
-    r2d2::{ConnectionManager, Pool},
-    PgConnection,
-};
+use diesel::PgConnection;
 use teloxide::{
-    requests::{Requester, ResponseResult},
-    types::{ChatId, Message, User, UserId},
+    types::{Message, User},
     Bot,
 };
-use tokio::sync::Mutex;
 
 use crate::{
     db_objects::channel_history::ChannelHistory,
@@ -81,10 +75,12 @@ impl MessageService {
 
         // Try to parse the the response from ChatGPT and
         // react to it appropriately.
-        // Self::react_to_signal(chatgpt_message, bot, trusted_user_id, exchange_client).await?;
+        Self::react_to_signal(chatgpt_message, bot, bot_state.clone()).await?;
 
         // Remove a message from the history in order not to waste tokens.
         chatgpt_conversation.history.truncate(2);
+
+        // Inform a client about the result.
 
         BotService::inform_client(
             &bot,
@@ -359,90 +355,32 @@ impl MessageService {
         } else if let Ok(position_closure) = serde_json::from_str::<PositionClosure>(&signal) {
             // This is a position closure signal.
             // Close a part of the position.
-            match ExchangeService::close_part_of_position_on_perpetual_swaps(
-                &position_closure,
-                exchange_client,
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(position_closure),
+                    ExchangeService::close_part_of_position_on_perpetual_swaps,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
             )
-            .await
-            {
-                Ok(_) => {
-                    log::info!(
-                        "A position was closed successfully:\n{:#?}",
-                        position_closure
-                    ); // end log
-
-                    // Inform a user in Telegram.
-                    BotService::inform_client(
-                        bot,
-                        trusted_user_id,
-                        "🟢<b>A position was closed successfully!</b>🟢",
-                    )
-                    .await?;
-                } // end Ok
-                Err(error) => {
-                    log::error!(
-                        "Failed to close a part of position:\n{:#?}\nBecause of: {}",
-                        position_closure,
-                        error
-                    ); // end log
-
-                    // Inform a user in Telegram.
-                    BotService::inform_client(
-                        bot,
-                        trusted_user_id,
-                        format!(
-                            "🔴<b>Failed to close a part of position!</b>🔴\n\
-                        <b>Error:</b> {}",
-                            error
-                        ),
-                    )
-                    .await?;
-                } // end Err
-            }; // end match
+            .await;
         } else if let Ok(stop_loss_adjustment) = serde_json::from_str::<StopLossAdjustment>(&signal)
         {
             // This is a stop loss adjustment signal.
             // Adjust stop loss of a position.
-            match ExchangeService::adjust_stop_loss_on_perpetual_swaps(
-                &stop_loss_adjustment,
-                exchange_client,
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(stop_loss_adjustment),
+                    ExchangeService::adjust_stop_loss_on_perpetual_swaps,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
             )
-            .await
-            {
-                Ok(_) => {
-                    log::info!(
-                        "A stop loss was adjusted successfully:\n{:#?}",
-                        stop_loss_adjustment
-                    ); // end log
-
-                    // Inform a user in Telegram.
-                    BotService::inform_client(
-                        bot,
-                        trusted_user_id,
-                        "🟢<b>A stop loss was adjusted successfully!</b>🟢",
-                    )
-                    .await?;
-                } // end Ok
-                Err(error) => {
-                    log::error!(
-                        "Failed to adjust a stop loss:\n{:#?}\nBecause of: {}",
-                        stop_loss_adjustment,
-                        error
-                    ); // end log
-
-                    // Inform a user in Telegram.
-                    BotService::inform_client(
-                        bot,
-                        trusted_user_id,
-                        format!(
-                            "🔴<b>Failed to adjust a stop loss!</b>🔴\n\
-                        <b>Error:</b> {}",
-                            error
-                        ),
-                    )
-                    .await?;
-                } // end Err
-            }; // end match
+            .await;
         } else {
             // There is nothing to do.
             // Skip the signal.

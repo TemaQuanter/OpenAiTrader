@@ -588,7 +588,7 @@ impl ExchangeService {
         // Set a position mode to hedge-mode.
         Self::set_hedge_mode_on_perpetual_swaps(&client, &position_opening.ticker)
             .await
-            .map_err(|error| AppError::new(error.to_string()));
+            .map_err(|error| AppError::new(error.to_string()))?;
 
         // Setup the leverage.
         Self::set_leverage(&client, &position_opening.ticker, leverage).await?;
@@ -687,11 +687,46 @@ impl ExchangeService {
     /// This function closes a part of a position on perpetual swaps
     /// in USDT.
     pub async fn close_part_of_position_on_perpetual_swaps(
-        position_closure: &PositionClosure,
-        client: &Client,
+        position_closure: Arc<PositionClosure>,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get a clone of the user to be able to adjust a stop loss.
+        let user_clone = user.clone();
+
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = Self::get_client(api_key, api_secret);
+
+        // Remove all conditional orders related to the position and
+        // get the information on whether or not it is necessary to
+        // remove an actual position or it was a conditional order
+        // that has not got executed yet.
+        //
+        // ATTENTION: The instruction above are valid ONLY if it
+        // is necessary to close the entire position. For partial
+        // position closure the instructions above are not valid!
+        if position_closure.percentage_to_close == dec!(100.0) {
+            // Close the related conditional orders and check
+            // whether or not it is necessary to continue closing
+            // the actual orders.
+            if Self::remove_all_conditional_orders_on_perpetual_swaps(
+                &client,
+                &position_closure.ticker,
+                &position_closure.direction,
+            )
+            .await?
+            {
+                // It is unnecessary to close any positions.
+                // In this case all the required operations are done.
+                return Ok(());
+            } // end if
+        } // end if
+
         // Get all the currently opened position.
-        let opened_positions = Self::get_all_opened_positions(client).await?;
+        let opened_positions = Self::get_all_opened_positions(&client).await?;
 
         // A position that it is required to adjust.
         let mut cur_position: Option<OpenedPosition> = None;
@@ -726,7 +761,7 @@ impl ExchangeService {
         if position_closure.percentage_to_close != dec!(100.0) {
             // Get a price step of the opened position.
             let price_step =
-                Self::get_price_step_on_perpetual_swaps(client, &position_closure.ticker).await?;
+                Self::get_price_step_on_perpetual_swaps(&client, &position_closure.ticker).await?;
 
             // A new stop loss.
             let stop_loss: Decimal;
@@ -747,12 +782,12 @@ impl ExchangeService {
 
             // Put a stop loss to non-loss.
             Self::adjust_stop_loss_on_perpetual_swaps(
-                &StopLossAdjustment {
+                Arc::new(StopLossAdjustment {
                     ticker: position_closure.ticker.to_string(),
                     direction: position_closure.direction.to_string(),
                     new_stop: stop_loss,
-                },
-                client,
+                }),
+                user_clone,
             )
             .await?;
         } // end if
@@ -775,7 +810,7 @@ impl ExchangeService {
 
         // Get the quantity step of the contract.
         let quantity_step =
-            Self::get_quantity_step_on_perpetual_swaps(client, cur_position.ticker).await?;
+            Self::get_quantity_step_on_perpetual_swaps(&client, cur_position.ticker).await?;
 
         // Calculate the quantity to fix.
         let qty = cur_position.qty * (position_closure.percentage_to_close / dec!(100.0));
@@ -807,9 +842,16 @@ impl ExchangeService {
     /// This function adjusts the stop loss of a particular position on
     /// perpetual swaps in USDT.
     pub async fn adjust_stop_loss_on_perpetual_swaps(
-        stop_loss_adjustment: &StopLossAdjustment,
-        client: &Client,
+        stop_loss_adjustment: Arc<StopLossAdjustment>,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = Self::get_client(api_key, api_secret);
+
         // This variable shows the side of the opened position.
         let position_side: &str;
 
@@ -827,7 +869,7 @@ impl ExchangeService {
         let mut cur_position: Option<OpenedPosition> = None;
 
         // Get all the currently opened positions.
-        let opened_positions = Self::get_all_opened_positions(client).await?;
+        let opened_positions = Self::get_all_opened_positions(&client).await?;
 
         // Traverse all the opened positions and find the one
         // that it is necessary to adjust the stop loss of.
@@ -866,7 +908,7 @@ impl ExchangeService {
         } // end if
 
         // Get all the opened orders.
-        let opened_orders = Self::get_all_opened_orders(client).await?;
+        let opened_orders = Self::get_all_opened_orders(&client).await?;
 
         // An order that it is required to adjust a stop loss of.
         let mut cur_order: Option<OpenedOrder> = None;
@@ -1050,6 +1092,67 @@ impl ExchangeService {
 
         Self::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order
+
+    /// This function removes all conditional orders of a particular
+    /// contract on perpetual swaps in USDT.
+    ///
+    /// The function returns True if a conditional order with the position to close
+    /// was found and removed (necessary not to close the position itself if
+    /// the order did not get executed). Otherwise the function returns false.
+    pub async fn remove_all_conditional_orders_on_perpetual_swaps(
+        client: &Client,
+        ticker: &String,
+        side: &String,
+    ) -> Result<bool, AppError> {
+        // Get a copy of the ticker.
+        // It is required for further part of the code.
+        let ticker = ticker.to_string();
+
+        // Get all the opened orders.
+        let opened_orders = Self::get_all_opened_orders(client).await?;
+
+        // This variable stores the result of the function.
+        let mut order_removed = false;
+
+        // This parameter is required to work with orders in a hedge-mode.
+        let position_idx: i32;
+
+        // Convert the side from (short/long) into (Sell/Buy).
+        // Determine the opposite side at the same time.
+        // Set the proper position idx.
+        let side = if side.to_lowercase() == "long" {
+            position_idx = 1;
+            "Buy"
+        } else {
+            position_idx = 2;
+            "Sell"
+        }; // end if
+
+        // Traverse all the opened orders and find the orders that have to
+        // be removed.
+        for opened_order in opened_orders {
+            // Check if the order ticker and position idx match
+            // the orders that are searched for.
+            if opened_order.ticker == ticker && opened_order.position_idx == position_idx {
+                // It is one of the positions searched for.
+
+                // Check if this order was meant to open a position.
+                if opened_order.side == side {
+                    // This is the order that was meant to open a new position.
+                    order_removed = true;
+                } // end if
+
+                // Cancel the order.
+                // Cancel only stop orders. (Stop losses and Take profits (partial and full)
+                // will be closed automatically, when the trade is closed)
+                if opened_order.stop_order_type == "Stop" {
+                    Self::cancel_order_on_perpetual_swaps(client, &opened_order).await?;
+                } // end if
+            } // end if
+        } // end for
+
+        Ok(order_removed)
+    } // end fn remove_all_conditional_orders_on_perpetual_swaps
 
     /// This function validates the response code from an exchange.
     /// If the response code is different from 0, then it generates
