@@ -6,6 +6,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use diesel::PgConnection;
 use teloxide::{
+    adaptors::Throttle,
     types::{Message, User},
     Bot,
 };
@@ -32,7 +33,7 @@ impl MessageService {
     pub async fn handle_message(
         message: Message,
         bot_state: BotState,
-        bot: &Bot,
+        bot: &Throttle<Bot>,
     ) -> Result<(), AppError> {
         // Acquire the conversation.
         let mut chatgpt_conversation = bot_state.chatgpt_conversation.lock().await;
@@ -240,7 +241,7 @@ impl MessageService {
         bot_state: BotState,
         age: chrono::Duration,
         wait_time_secs: u64,
-        bot: Bot,
+        bot: Throttle<Bot>,
     ) {
         // This variable indicates whether or not the operation was successful.
         let mut is_success = false;
@@ -333,7 +334,7 @@ impl MessageService {
     /// it opening, closing or increasing positions on perpetual swaps in USDT.
     pub async fn react_to_signal(
         signal: String,
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         bot_state: BotState,
     ) -> Result<(), AppError> {
         // Try to parse the the response from ChatGPT and
@@ -393,7 +394,7 @@ impl MessageService {
     /// an order on the exchange for multiple users.
     async fn send_exchange_order_execution_feedback(
         res: Result<(i32, i32), AppError>,
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         bot_state: &BotState,
     ) {
         // Unwrap the result and send an appropriate feedback.

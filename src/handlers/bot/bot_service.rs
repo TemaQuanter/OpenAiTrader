@@ -12,6 +12,7 @@ use diesel::{
 use rust_decimal::Decimal;
 
 use teloxide::{
+    adaptors::Throttle,
     dispatching::{HandlerExt, UpdateFilterExt},
     dptree,
     payloads::SendMessageSetters,
@@ -28,6 +29,7 @@ use crate::{
         channel_history::ChannelHistory, role_model::RoleId, status_model::StatusId,
         user_model::User,
     },
+    handlers::exchange::exchange_service::ExchangeService,
     utils::{database_service::DatabaseService, types_and_constants::ERROR_MESSAGE},
 };
 
@@ -71,6 +73,10 @@ enum UserCommands {
     SetIsActive(bool),
     #[command(description = "get the application settings")]
     GetSettings,
+    #[command(
+        description = "check whether or not the bot is able to access your account on the exchange"
+    )]
+    CheckExchangeApiConnection,
 } // end enum UserCommands
 
 // These are all commands that the bot can handle for admin user.
@@ -124,7 +130,7 @@ pub struct BotService;
 impl BotService {
     /// This function prompts a user for information.
     pub async fn inform_client(
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         chat_id: i64,
         message: impl AsRef<str>,
     ) -> ResponseResult<()> {
@@ -141,7 +147,7 @@ impl BotService {
 
     /// This function sets up a bot listener that handles every incoming message,
     /// whether it is a command, common message or anything other type.
-    pub async fn set_listener(bot: Bot, bot_state: BotState) -> JoinHandle<()> {
+    pub async fn set_listener(bot: Throttle<Bot>, bot_state: BotState) -> JoinHandle<()> {
         // A handler that determines the behavior of the bot in regards to
         // chat messages.
         let chat_handler = Update::filter_message()
@@ -198,7 +204,7 @@ impl BotService {
     /// This function is a handler for bot commands sent by a general user or higher.
     async fn handle_user_command(
         bot_state: BotState,
-        bot: Bot,
+        bot: Throttle<Bot>,
         msg: Message,
         cmd: UserCommands,
     ) -> ResponseResult<()> {
@@ -476,7 +482,7 @@ impl BotService {
                     msg.chat.id,
                     format!(
                         "㊙️  Exchange API secret is set to <b>{}</b>",
-                        registered_user.exchange_api_key.unwrap_or_default()
+                        registered_user.exchange_api_secret.unwrap_or_default()
                     ),
                 )
                 .parse_mode(ParseMode::Html)
@@ -570,7 +576,70 @@ impl BotService {
                 bot.send_message(msg.chat.id, cur_settings_message)
                     .parse_mode(ParseMode::Html)
                     .await?
-            } // end Command::GetSettings
+            } // end UserCommands::GetSettings
+            UserCommands::CheckExchangeApiConnection => {
+                // Verify the user.
+                let registered_user = match Self::get_user_and_verify_role(
+                    &bot,
+                    &msg,
+                    registered_user,
+                    vec![RoleId::User, RoleId::Admin, RoleId::Superuser],
+                )
+                .await?
+                {
+                    Some(registered_user) => registered_user,
+                    None => return Ok(()),
+                }; // end match
+
+                // Check if exchange API key is set.
+                if registered_user.exchange_api_key.is_none() {
+                    // The exchange API key is not set.
+                    // Inform a user about that.
+                    bot.send_message(msg.chat.id, "You did not set <b>API key</b>, please, do it")
+                        .parse_mode(ParseMode::Html)
+                        .await?;
+                    return Ok(());
+                } // end if
+
+                // Check if exchange API secret is set.
+                if registered_user.exchange_api_secret.is_none() {
+                    // The exchange API secret is not set.
+                    // Inform a user about that.
+                    bot.send_message(
+                        msg.chat.id,
+                        "You did not set <b>API secret</b>, please, do it",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                    return Ok(());
+                } // end if
+
+                // Get user credentials.
+                let api_key = registered_user.exchange_api_key.unwrap();
+                let api_secret = registered_user.exchange_api_secret.unwrap();
+
+                // Get an exchange client.
+                let client = ExchangeService::get_client(api_key, api_secret);
+
+                // Try to get the deposit of the user on the exchange via
+                // provided API keys.
+                match ExchangeService::get_uta_usdt_balance(&client).await {
+                    Ok(balance) => {
+                        // It was possible to get the user balance.
+                        // Inform the user about that.
+
+                        bot.send_message(msg.chat.id, format!("<b>I'm able to access your account!🥳🥳🥳</b>\n\nYou have <b>${}</b> for trading :)", balance.floor())).parse_mode(ParseMode::Html).await?;
+                    } // end Ok
+                    Err(error) => {
+                        log::error!("{}", error);
+
+                        // Inform a user about the issue.
+                        bot.send_message(msg.chat.id, "I'm not able to access you account...😔😔😔\nPlease, make sure that you provided the right API key and API secret.").parse_mode(ParseMode::Html).await?;
+                    } // end Err.
+                }; // end match
+
+                return Ok(());
+            } // end Command::CheckExchangeApiConnection
         }; // end match
 
         Ok(())
@@ -579,7 +648,7 @@ impl BotService {
     /// This function is a handler for bot commands sent by an admin or higher.
     async fn handle_admin_command(
         bot_state: BotState,
-        bot: Bot,
+        bot: Throttle<Bot>,
         msg: Message,
         cmd: AdminCommands,
     ) -> ResponseResult<()> {
@@ -871,7 +940,7 @@ impl BotService {
     /// This function is a handler for bot commands sent by a superuser or higher.
     async fn handle_superuser_command(
         bot_state: BotState,
-        bot: Bot,
+        bot: Throttle<Bot>,
         msg: Message,
         cmd: SuperuserCommands,
     ) -> ResponseResult<()> {
@@ -952,7 +1021,11 @@ impl BotService {
     } // end fn handle_superuser_command
 
     /// This function reads incoming posts from a trusted channel and reacts to them.
-    async fn read_channel_post(bot: Bot, msg: Message, bot_state: BotState) -> ResponseResult<()> {
+    async fn read_channel_post(
+        bot: Throttle<Bot>,
+        msg: Message,
+        bot_state: BotState,
+    ) -> ResponseResult<()> {
         // Get the connection to the database.
         let conn = &mut match DatabaseService::get_pool_connection(&bot_state.pg_connection_pool) {
             Ok(conn) => conn,
@@ -1039,7 +1112,7 @@ impl BotService {
     /// The function returns inner error, if the database connection could
     /// not be retrieved or if the user is suspicious.
     async fn run_user_checks_and_get_db_conn(
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         msg: &Message,
         bot_state: BotState,
     ) -> ResponseResult<
@@ -1164,7 +1237,7 @@ impl BotService {
     /// Returns None if the user did not pass verification.
     /// Returns User otherwise.
     async fn get_user_and_verify_role(
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         msg: &Message,
         user: Option<User>,
         allowed_roles: Vec<RoleId>,
@@ -1206,7 +1279,7 @@ impl BotService {
 
     /// This function displays a list of users by status in a formatted way.
     async fn display_users_by_status(
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         msg: &Message,
         status_id: StatusId,
         conn: &mut PgConnection,
@@ -1279,7 +1352,7 @@ impl BotService {
 
     /// This function displays a list of users by role in a formatted way.
     async fn display_users_by_role(
-        bot: &Bot,
+        bot: &Throttle<Bot>,
         msg: &Message,
         role_id: RoleId,
         conn: &mut PgConnection,

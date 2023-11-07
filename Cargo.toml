@@ -21,6 +21,6 @@ rust_decimal = { version = "1.32.0", features = [
 rust_decimal_macros = "1.32.0"
 serde = "1.0.188"
 serde_json = "1.0.107"
-teloxide = { version = "0.12.2", features = ["macros"] }
+teloxide = { version = "0.12.2", features = ["macros", "throttle"] }
 tokio = { version = "1.32.0", features = ["full"] }
 chrono = { version = "0.4.31", features = ["serde"] }

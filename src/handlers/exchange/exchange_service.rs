@@ -143,7 +143,7 @@ impl ExchangeService {
 
         // Return the balance of the wallet in USDT.
         Ok(Decimal::from_str_exact(
-            &response["OneResult"]["list"][0]["coin"][0]["equity"]
+            &response["result"]["list"][0]["coin"][0]["equity"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -168,7 +168,7 @@ impl ExchangeService {
         // Parse the data into a DTO.
 
         // Convert the response into an array of opened positions.
-        let opened_positions_raw = response["OneResult"]["list"].as_array().unwrap();
+        let opened_positions_raw = response["result"]["list"].as_array().unwrap();
 
         // Declare an array that stores parsed opened positions.
         let mut opened_positions: Vec<OpenedPosition> = Vec::new();
@@ -200,7 +200,7 @@ impl ExchangeService {
         // Parse the data into a DTO.
 
         // Convert the response into an array of opened orders.
-        let opened_orders_raw = response["OneResult"]["list"].as_array().unwrap();
+        let opened_orders_raw = response["result"]["list"].as_array().unwrap();
 
         // Declare an array that stores parsed opened orders.
         let mut opened_orders: Vec<OpenedOrder> = Vec::new();
@@ -357,7 +357,7 @@ impl ExchangeService {
 
         // Get the current market price.
         let market_price = Decimal::from_str_exact(
-            &response["OneResult"]["list"][0]["markPrice"]
+            &response["result"]["list"][0]["markPrice"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -384,7 +384,7 @@ impl ExchangeService {
 
         // Get the quantity step for the instrument.
         let price_step = Decimal::from_str_exact(
-            &response["OneResult"]["list"][0]["priceFilter"]["tickSize"]
+            &response["result"]["list"][0]["priceFilter"]["tickSize"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -411,7 +411,7 @@ impl ExchangeService {
 
         // Get the quantity step for the instrument.
         let quantity_step = Decimal::from_str_exact(
-            &response["OneResult"]["list"][0]["lotSizeFilter"]["qtyStep"]
+            &response["result"]["list"][0]["lotSizeFilter"]["qtyStep"]
                 .to_string()
                 .replace("\"", ""),
         )
@@ -1170,7 +1170,7 @@ impl ExchangeService {
         ];
 
         // Get the error code as a number.
-        let response_code = response["retCode"]
+        let response_code = response["result"]["retCode"]
             .to_string()
             .replace("\"", "")
             .parse::<i32>()
@@ -1186,7 +1186,7 @@ impl ExchangeService {
         // Return an error with the error message received from the
         // exchange.
         return Err(AppError::new(
-            &response["retMsg"].to_string().replace("\"", ""),
+            &response["result"]["retMsg"].to_string().replace("\"", ""),
         ));
     } // end fn validate_exchange_response
 } // end impl ExchangeService

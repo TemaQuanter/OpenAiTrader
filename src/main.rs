@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use chatgpt::prelude::{ChatGPT, ChatGPTEngine, ModelConfigurationBuilder, Url};
 use flexi_logger::{Age, Cleanup, Criterion, FileSpec, Logger, Naming, WriteMode};
+use teloxide::adaptors::throttle::Limits;
+use teloxide::requests::RequesterExt;
 use teloxide::Bot;
 use tokio::sync::Mutex;
 use trading_bot::utils::app_error::AppError;
@@ -63,7 +65,7 @@ async fn main() -> Result<(), AppError> {
     log::info!("Environmental variables loaded");
 
     // Initialize a telegram bot.
-    let bot = Bot::new(&tg_bot_api);
+    let bot = Bot::new(&tg_bot_api).throttle(Limits::default());
 
     // Initialize ChatGPT client.
     let chatgpt_client = ChatGPT::new_with_config(
