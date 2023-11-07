@@ -75,7 +75,7 @@ impl DatabaseService {
             // Check if it is not the last attempt.
             if attempt < attempts - 1 {
                 // If the connection was not established, then wait for some time and repeat the attempt.
-                tokio::time::sleep(tokio::time::Duration::from_secs(3));
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             } // end if
         } // end for
 

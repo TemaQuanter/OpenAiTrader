@@ -1,7 +1,3 @@
-// This file contains some custom types.
-
-use std::error::Error;
-
 // The max length of ChatGPT history.
 // Currently out of use.
 pub const _CHAT_GPT_HISTORY_LENGTH: usize = 200;

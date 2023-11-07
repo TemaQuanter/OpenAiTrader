@@ -217,11 +217,11 @@ impl ExchangeService {
         Ok(opened_orders)
     } // end fn get_all_opened_orders
 
-    /// This function opens a position on perpetual swaps for every single user
+    /// This function executes an exchange order on perpetual swaps for every single user
     /// asynchronously.
     pub async fn execute_exchange_order_for_all_users<T, Out>(
         exchange_order: Arc<T>,
-        func: fn(Arc<T>, &Client) -> Out,
+        func: fn(Arc<T>, User) -> Out,
         bot_state: BotState,
     ) -> Result<(i32, i32), AppError>
     where
@@ -241,15 +241,8 @@ impl ExchangeService {
 
             // Create a new task.
             let new_task = tokio::spawn(async move {
-                // Get user credentials.
-                let api_key = user.exchange_api_key.unwrap();
-                let api_secret = user.exchange_api_secret.unwrap();
-
-                // Get an exchange client.
-                let client = Self::get_client(api_key, api_secret);
-
                 // Try to open a position on perpetual swaps.
-                func(exchange_order_clone, &client).await
+                func(exchange_order_clone, user).await
             });
 
             // Add the task to the array of running tasks.
@@ -431,8 +424,15 @@ impl ExchangeService {
     /// in USDT.
     pub async fn open_position_on_perpetual_swaps(
         position_opening: Arc<PositionOpening>,
-        client: &Client,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = Self::get_client(api_key, api_secret);
+
         // Make a copy of the position to modify it later.
         let mut position_opening = (*position_opening).clone();
 
@@ -499,7 +499,7 @@ impl ExchangeService {
                 trigger_direction = None;
                 trigger_price = None;
 
-                Self::get_instrument_price_on_perpetual_swaps(client, &position_opening.ticker)
+                Self::get_instrument_price_on_perpetual_swaps(&client, &position_opening.ticker)
                     .await
                     .map_err(|error| AppError::new(error.to_string()))?
             } // end "market"
@@ -527,7 +527,7 @@ impl ExchangeService {
 
         // Get the current market price of the contract.
         let cur_market_price =
-            Self::get_instrument_price_on_perpetual_swaps(client, &position_opening.ticker)
+            Self::get_instrument_price_on_perpetual_swaps(&client, &position_opening.ticker)
                 .await
                 .map_err(|error| AppError::new(error.to_string()))?;
 
@@ -553,23 +553,20 @@ impl ExchangeService {
             } // end if
         } // end if
 
-        // Load the application settings to get the deposit and the risk per trade.
-        let app_settings = AppSettingsService::load_settings().unwrap();
-
         // Calculate the price movement before stop loss in percentage.
         let stop_loss_percentage =
             (dec!(1.0) - (position_opening.stop_loss / cur_contract_price)).abs() * dec!(100.0);
 
         // Calculate the value of contracts to buy/sell in USDT.
-        let contracts_value = (app_settings.deposit / stop_loss_percentage)
-            * (app_settings.risk * position_opening.risk);
+        let contracts_value = (user.deposit.unwrap() / stop_loss_percentage)
+            * (user.risk.unwrap() * position_opening.risk);
 
         // Calculate the quantity of contracts to buy/sell.
         let qty = contracts_value / cur_contract_price;
 
         // Get the quantity step for the instrument.
         let quantity_step =
-            &Self::get_quantity_step_on_perpetual_swaps(client, &position_opening.ticker)
+            &Self::get_quantity_step_on_perpetual_swaps(&client, &position_opening.ticker)
                 .await
                 .map_err(|error| AppError::new(error.to_string()))?;
 
@@ -589,12 +586,12 @@ impl ExchangeService {
         }; // end if
 
         // Set a position mode to hedge-mode.
-        Self::set_hedge_mode_on_perpetual_swaps(client, &position_opening.ticker)
+        Self::set_hedge_mode_on_perpetual_swaps(&client, &position_opening.ticker)
             .await
             .map_err(|error| AppError::new(error.to_string()));
 
         // Setup the leverage.
-        Self::set_leverage(client, &position_opening.ticker, leverage).await?;
+        Self::set_leverage(&client, &position_opening.ticker, leverage).await?;
 
         // Create the POST request for position opening.
         let post_request: serde_json::Value = json!({
@@ -667,7 +664,7 @@ impl ExchangeService {
         for _ in 0..number_take_profits.to_string().parse::<f64>().unwrap() as i32 {
             // Set a new conditional order with take profit.
             Self::place_partial_take_profit_order(
-                client,
+                &client,
                 &position_opening.ticker,
                 &position_opening.direction,
                 cur_price.to_string(),
