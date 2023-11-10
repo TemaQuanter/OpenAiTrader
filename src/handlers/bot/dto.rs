@@ -66,3 +66,14 @@ pub struct StopLossAdjustment {
     /// A new stop.
     pub new_stop: Decimal,
 } // end struct StopLossAdjustment
+
+/// This structure represents a conditional order removal.
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConditionalOrderRemoval {
+    /// A ticker of the asset.
+    pub ticker: String,
+    /// A direction (short/long).
+    pub direction: String,
+    /// A new stop.
+    pub trigger_price: Decimal,
+} // end struct StopLossAdjustment

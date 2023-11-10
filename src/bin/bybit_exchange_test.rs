@@ -13,7 +13,18 @@ async fn main() {
     let secret =
         CredentialSecurity::decode_env_var("EXCHANGE_SECRET").expect("no API secret found");
 
-    let client = ExchangeService::get_client(key, secret).unwrap();
+    let client = ExchangeService::get_client(key, secret);
+
+    ExchangeService::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
+        .await
+        .unwrap();
+
+    // println!(
+    //     "{:#?}",
+    //     ExchangeService::get_position_leverage(&client, &"XRPUSDT".to_string())
+    //         .await
+    //         .unwrap()
+    // );
 
     // println!(
     //     "{}",
@@ -36,29 +47,29 @@ async fn main() {
     //         .unwrap()
     // );
 
-    let position_opening = PositionOpening {
-        ticker: "XRPUSDT".to_string(),
-        direction: "short".to_string(),
-        risk: dec!(1.0),
-        order_type: "Market".to_string(),
-        lower_bound_entry: dec!(0.3),
-        upper_bound_entry: dec!(0.3),
-        stop_loss: dec!(0.4),
-        take_profit_lower_bound: dec!(0.2),
-        take_profit_upper_bound: dec!(0.1),
-    };
+    // let position_opening = PositionOpening {
+    //     ticker: "XRPUSDT".to_string(),
+    //     direction: "short".to_string(),
+    //     risk: dec!(1.0),
+    //     order_type: "Market".to_string(),
+    //     lower_bound_entry: dec!(0.3),
+    //     upper_bound_entry: dec!(0.3),
+    //     stop_loss: dec!(0.4),
+    //     take_profit_lower_bound: dec!(0.2),
+    //     take_profit_upper_bound: dec!(0.1),
+    // };
 
-    let stop_loss_adjustment = StopLossAdjustment {
-        ticker: "XRPUSDT".to_string(),
-        direction: "short".to_string(),
-        new_stop: dec!(0.6),
-    };
+    // let stop_loss_adjustment = StopLossAdjustment {
+    //     ticker: "XRPUSDT".to_string(),
+    //     direction: "short".to_string(),
+    //     new_stop: dec!(0.6),
+    // };
 
-    let position_closure = PositionClosure {
-        ticker: "XRPUSDT".to_string(),
-        direction: "short".to_string(),
-        percentage_to_close: dec!(100.0),
-    };
+    // let position_closure = PositionClosure {
+    //     ticker: "XRPUSDT".to_string(),
+    //     direction: "short".to_string(),
+    //     percentage_to_close: dec!(100.0),
+    // };
 
     // println!(
     //     "{}",

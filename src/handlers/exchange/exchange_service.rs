@@ -321,6 +321,9 @@ impl ExchangeService {
         let opened_order = OpenedOrder {
             ticker: raw_opened_order["symbol"].to_string().replace("\"", ""),
             side: raw_opened_order["side"].to_string().replace("\"", ""),
+            trigger_price: raw_opened_order["triggerPrice"]
+                .to_string()
+                .replace("\"", ""),
             stop_order_type: raw_opened_order["stopOrderType"]
                 .to_string()
                 .replace("\"", ""),
@@ -591,7 +594,13 @@ impl ExchangeService {
             .map_err(|error| AppError::new(error.to_string()))?;
 
         // Setup the leverage.
-        Self::set_leverage(&client, &position_opening.ticker, leverage).await?;
+        Self::set_leverage(
+            &client,
+            &position_opening.ticker,
+            &position_opening.direction,
+            leverage,
+        )
+        .await?;
 
         // Create the POST request for position opening.
         let post_request: serde_json::Value = json!({
@@ -956,11 +965,30 @@ impl ExchangeService {
 
     /// This function sets a leverage for a particular position on
     /// perpetual swaps in USDT.
+    ///
+    /// NOTE: Direction must be "Sell" or "Buy".
     pub async fn set_leverage(
         client: &Client,
         ticker: &String,
+        direction: &String,
         leverage: Decimal,
     ) -> Result<(), AppError> {
+        // Get set leverages on perpetual swaps for a particular asset.
+        let (mut long_position_leverage, mut short_position_leverage) =
+            Self::get_position_leverage(client, ticker).await?;
+
+        // Check what position leverage it is necessary to adjust.
+        if direction == "Buy" {
+            // It is necessary to adjust the leverage of a long position.
+            long_position_leverage = leverage
+        } else if direction == "Sell" {
+            // It is necessary to adjust the leverage of a short position.
+            short_position_leverage = leverage
+        } else {
+            // The direction is given incorrectly.
+            return Err(AppError::new("The direction is provided incorrectly"));
+        } // end if
+
         // Send a request to adjust a leverage on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -968,8 +996,8 @@ impl ExchangeService {
                 Some(json!({
                     "category": "linear",
                     "symbol": ticker,
-                    "buyLeverage": leverage.to_string(),
-                    "sellLeverage": leverage.to_string(),
+                    "buyLeverage": long_position_leverage.to_string(),
+                    "sellLeverage": short_position_leverage.to_string(),
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
@@ -978,6 +1006,41 @@ impl ExchangeService {
 
         Self::validate_exchange_response(&response)
     } // end fn set_leverage
+
+    /// This function retrieves a set leverage fro a particular position
+    /// on perpetual swaps.
+    ///
+    /// The first element of the tuple is long position leverage.
+    /// The second element of the tuple is short position leverage.
+    pub async fn get_position_leverage(
+        client: &Client,
+        ticker: &String,
+    ) -> Result<(Decimal, Decimal), AppError> {
+        // Send a request to get a position leverage on perpetual swaps.
+        let response: serde_json::Value = client
+            .get(
+                "/v5/position/list",
+                Some(&[("category", "linear"), ("symbol", ticker)]),
+                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+            )
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Retrieve the leverage for long position.
+        let long_position_leverage = response["result"]["list"][0]["leverage"]
+            .to_string()
+            .replace("\"", "");
+
+        // Retrieve the leverage for short position.
+        let short_position_leverage = response["result"]["list"][1]["leverage"]
+            .to_string()
+            .replace("\"", "");
+
+        Ok((
+            Decimal::from_str_exact(&long_position_leverage).unwrap(),
+            Decimal::from_str_exact(&short_position_leverage).unwrap(),
+        ))
+    } // end fn get_position_leverage
 
     /// This function sets a position in a hedge-mode.
     pub async fn set_hedge_mode_on_perpetual_swaps(
@@ -1170,7 +1233,7 @@ impl ExchangeService {
         ];
 
         // Get the error code as a number.
-        let response_code = response["result"]["retCode"]
+        let response_code = response["retCode"]
             .to_string()
             .replace("\"", "")
             .parse::<i32>()
