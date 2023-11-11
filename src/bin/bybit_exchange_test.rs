@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use rust_decimal_macros::dec;
 use trading_bot::{
+    db_objects::user_model::User,
     handlers::{
         bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
         exchange::exchange_service::ExchangeService,
     },
-    utils::credential_security::CredentialSecurity,
+    utils::{credential_security::CredentialSecurity, database_service::DatabaseService},
 };
 
 #[tokio::main]
@@ -13,11 +16,25 @@ async fn main() {
     let secret =
         CredentialSecurity::decode_env_var("EXCHANGE_SECRET").expect("no API secret found");
 
+    let test_user_telegram_id = CredentialSecurity::decode_env_var("TEST_USER_TG_ID")
+        .expect("no test user tg id found")
+        .parse::<i64>()
+        .unwrap();
+
+    // Create a database connection pool.
+    let pg_connection_pool = DatabaseService::create_database_connection_pool();
+
+    // Get database connection.
+    let conn = &mut DatabaseService::get_pool_connection(&pg_connection_pool).unwrap();
+
     let client = ExchangeService::get_client(key, secret);
 
-    ExchangeService::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
-        .await
-        .unwrap();
+    // Get a test user from the database.
+    let test_user = User::get_from_db_by_id(test_user_telegram_id, conn).unwrap();
+
+    // ExchangeService::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
+    //     .await
+    //     .unwrap();
 
     // println!(
     //     "{:#?}",
@@ -47,17 +64,17 @@ async fn main() {
     //         .unwrap()
     // );
 
-    // let position_opening = PositionOpening {
-    //     ticker: "XRPUSDT".to_string(),
-    //     direction: "short".to_string(),
-    //     risk: dec!(1.0),
-    //     order_type: "Market".to_string(),
-    //     lower_bound_entry: dec!(0.3),
-    //     upper_bound_entry: dec!(0.3),
-    //     stop_loss: dec!(0.4),
-    //     take_profit_lower_bound: dec!(0.2),
-    //     take_profit_upper_bound: dec!(0.1),
-    // };
+    let position_opening = PositionOpening {
+        ticker: "XRPUSDT".to_string(),
+        direction: "long".to_string(),
+        risk: dec!(1.0),
+        order_type: "Market".to_string(),
+        lower_bound_entry: dec!(0.6),
+        upper_bound_entry: dec!(0.7),
+        stop_loss: dec!(0.63),
+        take_profit_lower_bound: dec!(1.1),
+        take_profit_upper_bound: dec!(1.5),
+    };
 
     // let stop_loss_adjustment = StopLossAdjustment {
     //     ticker: "XRPUSDT".to_string(),
@@ -89,9 +106,12 @@ async fn main() {
     //     .await
     //     .unwrap();
 
-    // ExchangeService::open_position_on_perpetual_swaps(&position_opening, &client)
-    //     .await
-    //     .unwrap();
+    ExchangeService::open_position_on_perpetual_swaps(
+        Arc::new(position_opening),
+        test_user.clone(),
+    )
+    .await
+    .unwrap();
 
     // ExchangeService::adjust_stop_loss_on_perpetual_swaps(&stop_loss_adjustment, &client)
     //     .await

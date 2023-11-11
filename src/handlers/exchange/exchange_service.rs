@@ -709,31 +709,6 @@ impl ExchangeService {
         // Get an exchange client.
         let client = Self::get_client(api_key, api_secret);
 
-        // Remove all conditional orders related to the position and
-        // get the information on whether or not it is necessary to
-        // remove an actual position or it was a conditional order
-        // that has not got executed yet.
-        //
-        // ATTENTION: The instruction above are valid ONLY if it
-        // is necessary to close the entire position. For partial
-        // position closure the instructions above are not valid!
-        if position_closure.percentage_to_close == dec!(100.0) {
-            // Close the related conditional orders and check
-            // whether or not it is necessary to continue closing
-            // the actual orders.
-            if Self::remove_all_conditional_orders_on_perpetual_swaps(
-                &client,
-                &position_closure.ticker,
-                &position_closure.direction,
-            )
-            .await?
-            {
-                // It is unnecessary to close any positions.
-                // In this case all the required operations are done.
-                return Ok(());
-            } // end if
-        } // end if
-
         // Get all the currently opened position.
         let opened_positions = Self::get_all_opened_positions(&client).await?;
 
@@ -1109,44 +1084,30 @@ impl ExchangeService {
         trigger_price: String,
         qty: String,
     ) -> Result<(), AppError> {
-        // The opposite direction to close the position.
-        let side: &str;
-
-        // Trigger direction.
-        // The parameter is required when setting up a conditional
-        // order.
-        let trigger_direction: i32;
-
         // What position to close (hedge-short/hedge-long).
         let positions_idx: i32;
 
         // Determine the values for the order.
         if position_side == "Buy" {
-            side = "Sell";
-            trigger_direction = 1;
             positions_idx = 1;
-        } else {
-            side = "Buy";
-            trigger_direction = 2;
+        } else if position_side == "Sell" {
             positions_idx = 2;
+        } else {
+            // It is an invalid position side.
+            return Err(AppError::new("Invalid position side"));
         } // end if
 
-        // Send a request to adjust a leverage on perpetual swaps.
+        // Send a request to place a partial take profit order on perpetual swaps.
         let response: serde_json::Value = client
             .post(
-                "/v5/order/create",
+                "/v5/position/trading-stop",
                 Some(json!({
                     "category": "linear",
                     "symbol": ticker,
-                    "side": side,
-                    "orderType": "Market",
-                    "qty": qty.to_string(),
-                    "triggerDirection": trigger_direction,
-                    "triggerPrice": trigger_price.to_string(),
+                    "takeProfit":  trigger_price,
+                    "tpSize": qty.to_string(),
                     "positionIdx": positions_idx,
-                    "reduceOnly": true,
                     "tpslMode": "Partial",
-                    "closeOnTrigger": true
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
@@ -1155,67 +1116,6 @@ impl ExchangeService {
 
         Self::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order
-
-    /// This function removes all conditional orders of a particular
-    /// contract on perpetual swaps in USDT.
-    ///
-    /// The function returns True if a conditional order with the position to close
-    /// was found and removed (necessary not to close the position itself if
-    /// the order did not get executed). Otherwise the function returns false.
-    pub async fn remove_all_conditional_orders_on_perpetual_swaps(
-        client: &Client,
-        ticker: &String,
-        side: &String,
-    ) -> Result<bool, AppError> {
-        // Get a copy of the ticker.
-        // It is required for further part of the code.
-        let ticker = ticker.to_string();
-
-        // Get all the opened orders.
-        let opened_orders = Self::get_all_opened_orders(client).await?;
-
-        // This variable stores the result of the function.
-        let mut order_removed = false;
-
-        // This parameter is required to work with orders in a hedge-mode.
-        let position_idx: i32;
-
-        // Convert the side from (short/long) into (Sell/Buy).
-        // Determine the opposite side at the same time.
-        // Set the proper position idx.
-        let side = if side.to_lowercase() == "long" {
-            position_idx = 1;
-            "Buy"
-        } else {
-            position_idx = 2;
-            "Sell"
-        }; // end if
-
-        // Traverse all the opened orders and find the orders that have to
-        // be removed.
-        for opened_order in opened_orders {
-            // Check if the order ticker and position idx match
-            // the orders that are searched for.
-            if opened_order.ticker == ticker && opened_order.position_idx == position_idx {
-                // It is one of the positions searched for.
-
-                // Check if this order was meant to open a position.
-                if opened_order.side == side {
-                    // This is the order that was meant to open a new position.
-                    order_removed = true;
-                } // end if
-
-                // Cancel the order.
-                // Cancel only stop orders. (Stop losses and Take profits (partial and full)
-                // will be closed automatically, when the trade is closed)
-                if opened_order.stop_order_type == "Stop" {
-                    Self::cancel_order_on_perpetual_swaps(client, &opened_order).await?;
-                } // end if
-            } // end if
-        } // end for
-
-        Ok(order_removed)
-    } // end fn remove_all_conditional_orders_on_perpetual_swaps
 
     /// This function validates the response code from an exchange.
     /// If the response code is different from 0, then it generates
@@ -1246,10 +1146,16 @@ impl ExchangeService {
         } // end if
 
         // Otherwise there is an error in the response.
+
+        // Try to get an error message.
+        let error_message = if let serde_json::Value::String(error_msg) = &response["retMsg"] {
+            error_msg
+        } else {
+            "Null"
+        }; // end if
+
         // Return an error with the error message received from the
         // exchange.
-        return Err(AppError::new(
-            &response["result"]["retMsg"].to_string().replace("\"", ""),
-        ));
+        return Err(AppError::new(error_message));
     } // end fn validate_exchange_response
 } // end impl ExchangeService
