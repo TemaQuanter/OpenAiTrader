@@ -72,8 +72,8 @@ async fn main() {
         lower_bound_entry: dec!(0.6),
         upper_bound_entry: dec!(0.7),
         stop_loss: dec!(0.63),
-        take_profit_lower_bound: dec!(1.1),
-        take_profit_upper_bound: dec!(1.5),
+        take_profit_lower_bound: None, //Some(dec!(1.1)),
+        take_profit_upper_bound: Some(dec!(1.5)),
     };
 
     // let stop_loss_adjustment = StopLossAdjustment {

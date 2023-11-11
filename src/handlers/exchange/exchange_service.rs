@@ -603,13 +603,12 @@ impl ExchangeService {
         .await?;
 
         // Create the POST request for position opening.
-        let post_request: serde_json::Value = json!({
+        let mut post_request: serde_json::Value = json!({
             "category": "linear",
             "symbol": &position_opening.ticker,
             "side": position_opening.direction,
             "orderType": "Market",
             "qty": qty.to_string(),
-            "takeProfit": position_opening.take_profit_upper_bound,
             "stopLoss": position_opening.stop_loss,
             // Required for hedge-mode
             "positionIdx": position_idx,
@@ -640,6 +639,52 @@ impl ExchangeService {
         // if it is unsafe to open a position.
         Self::verify_position(&position_opening).await?;
 
+        // Try to unwrap take profit boundaries.
+
+        // Check if there is no take profit set for the position.
+        if position_opening.take_profit_lower_bound.is_none()
+            && position_opening.take_profit_upper_bound.is_some()
+        {
+            // Upper bound has a value, lower bound - not.
+
+            // Assign the upper boundary to the lower one.
+            position_opening.take_profit_lower_bound = position_opening.take_profit_upper_bound;
+
+            // Add a full take profit for the position.
+            post_request["takeProfit"] = serde_json::Value::String(
+                position_opening
+                    .take_profit_upper_bound
+                    .unwrap()
+                    .to_string(),
+            );
+        } else if position_opening.take_profit_lower_bound.is_some()
+            && position_opening.take_profit_upper_bound.is_none()
+        {
+            // Lower bound has a value, upper bound - not.
+
+            // Assign the lower boundary to the upper one.
+            position_opening.take_profit_upper_bound = position_opening.take_profit_lower_bound;
+
+            // Add a full take profit for the position.
+            post_request["takeProfit"] = serde_json::Value::String(
+                position_opening
+                    .take_profit_upper_bound
+                    .unwrap()
+                    .to_string(),
+            );
+        } else if position_opening.take_profit_lower_bound.is_some()
+            && position_opening.take_profit_upper_bound.is_some()
+        {
+            // Both boundaries contain a value.
+            // Add a full take profit for the position.
+            post_request["takeProfit"] = serde_json::Value::String(
+                position_opening
+                    .take_profit_upper_bound
+                    .unwrap()
+                    .to_string(),
+            );
+        } // end if
+
         // Send a request to open a position on perpetual swaps.
         let response: serde_json::Value = client
             .post(
@@ -656,6 +701,23 @@ impl ExchangeService {
             return Self::validate_exchange_response(&response);
         } // end if
 
+        // Check if there were no take profit information provided.
+        if position_opening.take_profit_lower_bound.is_none()
+            || position_opening.take_profit_upper_bound.is_none()
+        {
+            // There is no information about take profits and it is necessary to exit the function right here.
+            return Self::validate_exchange_response(&response);
+        } // end if
+
+        // Safely unwrap take profit boundaries.
+        let take_profit_lower_bound = position_opening.take_profit_lower_bound.unwrap();
+        let take_profit_upper_bound = position_opening.take_profit_upper_bound.unwrap();
+
+        // Check if both boundaries are equal, then there is no need to set partial orders.
+        if take_profit_lower_bound == take_profit_upper_bound {
+            return Self::validate_exchange_response(&response);
+        } // end if
+
         // The number of partial take profits to set.
         // It is float, as it is necessary for further calculations.
         let number_take_profits = Decimal::from_str_exact("3.0").unwrap();
@@ -665,15 +727,13 @@ impl ExchangeService {
             Decimal::floor(&((qty / number_take_profits) / quantity_step)) * quantity_step;
 
         // Calculate the price step to close the orders.
-        let price_step = (position_opening.take_profit_upper_bound
-            - position_opening.take_profit_lower_bound)
-            .abs()
-            / number_take_profits;
+        let price_step =
+            (take_profit_upper_bound - take_profit_lower_bound).abs() / number_take_profits;
 
         // A variable to keep track of the price in the loop.
         // It is necessary to take the minimum to calculate take profits
         // for short.
-        let mut cur_price = position_opening.take_profit_lower_bound;
+        let mut cur_price = take_profit_lower_bound;
 
         // Setup a grid of smaller take profits on the way to the main goal.
         for _ in 0..number_take_profits.to_string().parse::<f64>().unwrap() as i32 {

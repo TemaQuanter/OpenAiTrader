@@ -23,9 +23,9 @@ pub struct PositionOpening {
     /// Stop loss price.
     pub stop_loss: Decimal,
     /// Take profit lower bound.
-    pub take_profit_lower_bound: Decimal,
+    pub take_profit_lower_bound: Option<Decimal>,
     /// Take profit upper bound.
-    pub take_profit_upper_bound: Decimal,
+    pub take_profit_upper_bound: Option<Decimal>,
 } // end struct PositionOpening
 
 /// This structure represents an increase of
