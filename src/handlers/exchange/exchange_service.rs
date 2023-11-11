@@ -650,6 +650,12 @@ impl ExchangeService {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
+        // Check if it was a conditional order, then it is impossible to set
+        // partial take profits and it is possible to exit the function right here.
+        if position_opening.order_type == "conditional" {
+            return Self::validate_exchange_response(&response);
+        } // end if
+
         // The number of partial take profits to set.
         // It is float, as it is necessary for further calculations.
         let number_take_profits = Decimal::from_str_exact("3.0").unwrap();
