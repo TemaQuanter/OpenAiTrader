@@ -4,7 +4,7 @@ use rust_decimal_macros::dec;
 use trading_bot::{
     db_objects::user_model::User,
     handlers::{
-        bot::dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+        bot::dto::{PositionClosure, PositionIncrease, PositionOpening, StopLossAdjustment},
         exchange::exchange_service::ExchangeService,
     },
     utils::{credential_security::CredentialSecurity, database_service::DatabaseService},
@@ -64,17 +64,17 @@ async fn main() {
     //         .unwrap()
     // );
 
-    let position_opening = PositionOpening {
-        ticker: "XRPUSDT".to_string(),
-        direction: "long".to_string(),
-        risk: dec!(1.0),
-        order_type: "Market".to_string(),
-        lower_bound_entry: dec!(0.6),
-        upper_bound_entry: dec!(0.7),
-        stop_loss: dec!(0.63),
-        take_profit_lower_bound: None, //Some(dec!(1.1)),
-        take_profit_upper_bound: Some(dec!(1.5)),
-    };
+    // let position_opening = PositionOpening {
+    //     ticker: "XRPUSDT".to_string(),
+    //     direction: "short".to_string(),
+    //     risk: dec!(1.0),
+    //     order_type: "market".to_string(),
+    //     lower_bound_entry: dec!(0.6),
+    //     upper_bound_entry: dec!(0.7),
+    //     stop_loss: dec!(0.75),
+    //     take_profit_lower_bound: Some(dec!(0.5)),
+    //     take_profit_upper_bound: Some(dec!(0.4)),
+    // };
 
     // let stop_loss_adjustment = StopLossAdjustment {
     //     ticker: "XRPUSDT".to_string(),
@@ -87,6 +87,13 @@ async fn main() {
     //     direction: "short".to_string(),
     //     percentage_to_close: dec!(100.0),
     // };
+
+    let position_increase = PositionIncrease {
+        ticker: "XRPUSDT".to_string(),
+        direction: "short".to_string(),
+        new_stop: dec!(0.69),
+        percentage_to_increase: dec!(100.0),
+    };
 
     // println!(
     //     "{}",
@@ -106,8 +113,15 @@ async fn main() {
     //     .await
     //     .unwrap();
 
-    ExchangeService::open_position_on_perpetual_swaps(
-        Arc::new(position_opening),
+    // ExchangeService::open_position_on_perpetual_swaps(
+    //     Arc::new(position_opening),
+    //     test_user.clone(),
+    // )
+    // .await
+    // .unwrap();
+
+    ExchangeService::increase_position_on_perpetual_swaps(
+        Arc::new(position_increase),
         test_user.clone(),
     )
     .await

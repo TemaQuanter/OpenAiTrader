@@ -19,7 +19,10 @@ use crate::{
 
 use super::{
     bot_service::BotState,
-    dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+    dto::{
+        ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
+        StopLossAdjustment,
+    },
 };
 
 /// This struct contains all the functionality to
@@ -346,6 +349,34 @@ impl MessageService {
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(position_opening),
                     ExchangeService::open_position_on_perpetual_swaps,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(position_increase) = serde_json::from_str::<PositionIncrease>(&signal) {
+            // This is a position increase, pyramiding.
+            // Increase the position size.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(position_increase),
+                    ExchangeService::increase_position_on_perpetual_swaps,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(order_removal) = serde_json::from_str::<ConditionalOrderRemoval>(&signal) {
+            // This is a removal of an opened order.
+            // Remove the opened order on perpetual swaps.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(order_removal),
+                    ExchangeService::cancel_order_on_perpetual_swaps,
                     bot_state.clone(),
                 )
                 .await,

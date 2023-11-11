@@ -7,6 +7,7 @@ use crypto_botters::{
     bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
     Client,
 };
+use diesel::BoolExpressionMethods;
 use serde_json::json;
 
 use rust_decimal::Decimal;
@@ -18,7 +19,10 @@ use crate::{
     handlers::{
         bot::{
             bot_service::BotState,
-            dto::{PositionClosure, PositionOpening, StopLossAdjustment},
+            dto::{
+                ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
+                StopLossAdjustment,
+            },
         },
         exchange::dto::OpenedOrder,
     },
@@ -759,6 +763,105 @@ impl ExchangeService {
         Self::validate_exchange_response(&response)
     } // end fn open_position_on_perpetual_swaps
 
+    /// This function increases the size of an opened position on perpetual swaps.
+    pub async fn increase_position_on_perpetual_swaps(
+        position_increase: Arc<PositionIncrease>,
+        user: User,
+    ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = Self::get_client(api_key, api_secret);
+
+        // Get all opened positions on perpetual swaps.
+        let opened_positions = Self::get_all_opened_positions(&client).await?;
+
+        // Initialize the position to increase;
+        let mut position_to_increase: Option<OpenedPosition> = None;
+
+        // Shadow position increase order in order to modify it.
+        let mut position_increase = (*position_increase).clone();
+
+        // A special parameter that is required to identify a position side in a hedge-mode.
+        let position_idx: i32;
+
+        // Convert the position direction into the standard required by the exchange.
+        if position_increase.direction == "long" {
+            position_increase.direction = "Buy".to_string();
+
+            // Set a special index to opening a long position in a hedge-mode.
+            position_idx = 1;
+        } else if position_increase.direction == "short" {
+            position_increase.direction = "Sell".to_string();
+
+            // Set a special index to opening a short position in a hedge-mode.
+            position_idx = 2;
+        } else {
+            // The direction format is invalid.
+            return Err(AppError::new("Direction format is invalid"));
+        } // end if
+
+        // Try to find the position to increase.
+        for opened_position in opened_positions {
+            // Check whether or not the current position is the position
+            // to increase the size of.
+            if opened_position.ticker == position_increase.ticker
+                && opened_position.side == position_increase.direction
+            {
+                // It is the position to increase the size of.
+                position_to_increase = Some(opened_position);
+
+                // There is no need to loop further, as the position
+                // is already found.
+                break;
+            } // end if
+        } // end for
+
+        // If the position to increase was not found, then return an error.
+        if position_to_increase.is_none() {
+            return Err(AppError::new(
+                "The position to increase the size of was not found",
+            )); // end return
+        } // end if
+
+        // Safely unwrap the position to increase the size of.
+        let position_to_increase = position_to_increase.unwrap();
+
+        // Calculate the quantity it is necessary to buy/sell to increase the position size.
+        let extra_qty =
+            position_to_increase.qty * (position_increase.percentage_to_increase / dec!(100.0));
+
+        // Get the price step of the asset on perpetual swaps.
+        let qty_step =
+            Self::get_quantity_step_on_perpetual_swaps(&client, &position_increase.ticker).await?;
+
+        // Round the quantity.
+        let extra_qty = Decimal::ceil(&(extra_qty / qty_step)) * qty_step;
+
+        // Place an order to increase the position size on perpetual swaps.
+        let response: serde_json::Value = client
+            .post(
+                "/v5/order/create",
+                Some(json!({
+                    "category": "linear",
+                    "symbol": position_increase.ticker,
+                    "side": position_increase.direction,
+                    "orderType": "Market",
+                    "qty": extra_qty.to_string(),
+                    "stopLoss": position_increase.new_stop.to_string(),
+                    "positionIdx": position_idx,
+                })),
+                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+            )
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate the response from exchange.
+        Self::validate_exchange_response(&response)
+    } // end fn increase_position_on_perpetual_swaps
+
     /// This function closes a part of a position on perpetual swaps
     /// in USDT.
     pub async fn close_part_of_position_on_perpetual_swaps(
@@ -1107,9 +1210,64 @@ impl ExchangeService {
 
     /// This function cancels an opened order on perpetual swaps in USDT.
     pub async fn cancel_order_on_perpetual_swaps(
-        client: &Client,
-        order: &OpenedOrder,
+        order_removal: Arc<ConditionalOrderRemoval>,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = Self::get_client(api_key, api_secret);
+
+        // Get a clone of the order to remove.
+        let mut order_removal = (*order_removal).clone();
+
+        // Adjust the direction of the order to remove, so that it would
+        // the exchange standards.
+        if order_removal.direction == "long" {
+            order_removal.direction = "Buy".to_string();
+        } else if order_removal.direction == "short" {
+            order_removal.direction = "Sell".to_string();
+        } else {
+            // The format of the direction is invalid.
+            return Err(AppError::new("The format of direction is invalid"));
+        } // end if
+
+        // Get a trigger price as a string.
+        let trigger_price_string = order_removal.trigger_price.to_string();
+
+        // Get all opened orders on perpetual swaps.
+        let opened_orders = Self::get_all_opened_orders(&client).await?;
+
+        // Initialize the order to close.
+        let mut order: Option<OpenedOrder> = None;
+
+        // Traverse each order and find the one to close.
+        for opened_order in opened_orders {
+            // Check if the current opened order is the order to close.
+            if opened_order.ticker == order_removal.ticker
+                && opened_order.side == order_removal.direction
+                && opened_order.trigger_price == trigger_price_string
+            {
+                // It is the order to close.
+                order = Some(opened_order);
+
+                // The order is found, no need to continue searching.
+                break;
+            } // end if
+        } // end for
+
+        // Check if the order to close was found.
+        if order.is_none() {
+            // The order was not found.
+            // Inform a client about it.
+            return Err(AppError::new("The order to remove was not found"));
+        } // end if
+
+        // Safely unwrap the order.
+        let order = order.unwrap();
+
         // Send a request to cancel an order on perpetual swaps.
         let response: serde_json::Value = client
             .post(
