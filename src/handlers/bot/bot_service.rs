@@ -679,16 +679,44 @@ impl BotService {
         // Handle an admin command
         match cmd {
             AdminCommands::GetPendingUsers => {
-                Self::display_users_by_status(&bot, &msg, StatusId::Pending, conn).await?;
+                Self::display_users_by_status(
+                    &bot,
+                    &msg,
+                    StatusId::Pending,
+                    RoleId::from(registered_user.role_id),
+                    conn,
+                )
+                .await?;
             } // end AdminCommands::GetPendingUsers
             AdminCommands::GetBannedUsers => {
-                Self::display_users_by_status(&bot, &msg, StatusId::Banned, conn).await?;
+                Self::display_users_by_status(
+                    &bot,
+                    &msg,
+                    StatusId::Banned,
+                    RoleId::from(registered_user.role_id),
+                    conn,
+                )
+                .await?;
             } // end AdminCommands::GetBannedUsers
             AdminCommands::GetApprovedUsers => {
-                Self::display_users_by_status(&bot, &msg, StatusId::Approved, conn).await?;
+                Self::display_users_by_status(
+                    &bot,
+                    &msg,
+                    StatusId::Approved,
+                    RoleId::from(registered_user.role_id),
+                    conn,
+                )
+                .await?;
             } // end AdminCommands::GetApprovedUsers
             AdminCommands::GetRejectedUsers => {
-                Self::display_users_by_status(&bot, &msg, StatusId::Rejected, conn).await?;
+                Self::display_users_by_status(
+                    &bot,
+                    &msg,
+                    StatusId::Rejected,
+                    RoleId::from(registered_user.role_id),
+                    conn,
+                )
+                .await?;
             } // end AdminCommands::GetRejectedUsers
             AdminCommands::GetAdmins => {
                 Self::display_users_by_role(&bot, &msg, RoleId::Admin, conn).await?
@@ -716,10 +744,12 @@ impl BotService {
                     return Ok(());
                 } // end if
 
-                // If the user is superuser, then the command sender must be superuser as well.
-                if edited_user.role_id == (RoleId::Superuser as i32)
-                    && registered_user.role_id != (RoleId::Superuser as i32)
-                {
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
                     // Inform a user that the user is higher than them.
                     bot.send_message(
                         msg.chat.id,
@@ -772,16 +802,20 @@ impl BotService {
                     return Ok(());
                 } // end if
 
-                // If the user is superuser, then the command sender must be superuser as well.
-                if edited_user.role_id == (RoleId::Superuser as i32)
-                    && registered_user.role_id != (RoleId::Superuser as i32)
-                {
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
                     // Inform a user that the user is higher than them.
                     bot.send_message(
                         msg.chat.id,
                         "This user is higher in rank than you, you cannot edit them",
                     )
                     .await?;
+
+                    return Ok(());
                 } // end if
 
                 // Change the user role.
@@ -823,6 +857,22 @@ impl BotService {
                     // approved.
                     bot.send_message(msg.chat.id, "The user is already approved")
                         .await?;
+
+                    return Ok(());
+                } // end if
+
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
+                    // Inform a user that the user is higher than them.
+                    bot.send_message(
+                        msg.chat.id,
+                        "This user is higher in rank than you, you cannot edit them",
+                    )
+                    .await?;
 
                     return Ok(());
                 } // end if
@@ -870,6 +920,22 @@ impl BotService {
                     return Ok(());
                 } // end if
 
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
+                    // Inform a user that the user is higher than them.
+                    bot.send_message(
+                        msg.chat.id,
+                        "This user is higher in rank than you, you cannot edit them",
+                    )
+                    .await?;
+
+                    return Ok(());
+                } // end ifs
+
                 // Reject the user.
                 edited_user.status_id = StatusId::Rejected as i32;
 
@@ -909,6 +975,22 @@ impl BotService {
                     // banned.
                     bot.send_message(msg.chat.id, "The user is already banned")
                         .await?;
+
+                    return Ok(());
+                } // end if
+
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
+                    // Inform a user that the user is higher than them.
+                    bot.send_message(
+                        msg.chat.id,
+                        "This user is higher in rank than you, you cannot edit them",
+                    )
+                    .await?;
 
                     return Ok(());
                 } // end if
@@ -956,7 +1038,7 @@ impl BotService {
         let conn = &mut conn;
 
         // Verify the user.
-        let _registered_user = match Self::get_user_and_verify_role(
+        let registered_user = match Self::get_user_and_verify_role(
             &bot,
             &msg,
             registered_user,
@@ -989,6 +1071,22 @@ impl BotService {
                     // Inform a user that the user is already an admin.
                     bot.send_message(msg.chat.id, "This user is already a superuser")
                         .await?;
+
+                    return Ok(());
+                } // end if
+
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
+                    // Inform a user that the user is higher than them.
+                    bot.send_message(
+                        msg.chat.id,
+                        "This user is higher in rank than you, you cannot edit them",
+                    )
+                    .await?;
 
                     return Ok(());
                 } // end if
@@ -1278,14 +1376,18 @@ impl BotService {
     } // end fn verify_role
 
     /// This function displays a list of users by status in a formatted way.
+    ///
+    /// caller_role - a role of the user that calls the function.
+    /// (This is necessary not to disclose the information about higher ranked users)
     async fn display_users_by_status(
         bot: &Throttle<Bot>,
         msg: &Message,
         status_id: StatusId,
+        caller_role: RoleId,
         conn: &mut PgConnection,
     ) -> ResponseResult<()> {
         // Retrieve all users with a particular status from the database.
-        let retrieved_users = match User::get_users_with_status(&status_id, conn) {
+        let retrieved_users_raw = match User::get_users_with_status(&status_id, conn) {
             Ok(retrieved_users) => retrieved_users,
             Err(error) => {
                 log::error!("{}", error);
@@ -1295,7 +1397,20 @@ impl BotService {
 
                 return Ok(());
             } // end Err
-        };
+        }; // end match
+
+        // Get the list of users who are the same or lower rank than the caller.
+        let mut retrieved_users: Vec<User> = Vec::new();
+
+        // Traverse each user and check whether or not there rank is higher than
+        // the caller rank.
+        for retrieved_user in retrieved_users_raw {
+            // Check if the rank of the caller is the same or higher than
+            // the rank of the current user.
+            if Self::is_higher_or_same_role(&caller_role, &RoleId::from(retrieved_user.role_id)) {
+                retrieved_users.push(retrieved_user);
+            } // end if
+        } // end for
 
         // A header for a list.
         let list_header = &format!("{} {} {}\n", "#", "Username", "ID");
@@ -1421,4 +1536,17 @@ impl BotService {
 
         Ok(())
     } // end display_users_by_role
+
+    /// This function returns
+    ///     true - if the caller role is the same or higher than the role of
+    ///            other user.
+    ///     false - otherwise.
+    fn is_higher_or_same_role(caller_role: &RoleId, other_role: &RoleId) -> bool {
+        // Convert roles to numbers.
+        let caller_role_num = caller_role.clone() as i32;
+        let other_role_num = other_role.clone() as i32;
+
+        // Compare two roles as numbers and return the result.
+        caller_role_num >= other_role_num
+    } // end fn is_higher_or_same_role
 } // end impl BotService
