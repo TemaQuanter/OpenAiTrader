@@ -778,6 +778,14 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "You were made an <b>Admin</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             } // end AdminCommands::MakeAdmin
             AdminCommands::MakeUser(user_id) => {
                 // Get the user to make a user from the database.
@@ -836,6 +844,14 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "You were made a <b>User</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             } // end AdminCommands::MakeUser
             AdminCommands::Approve(user_id) => {
                 // Get the user to approve from the database.
@@ -895,6 +911,15 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "I'm thrilled to tell you, that you were <b>approved</b> to use me!🥳🥳🥳\n\
+                    Use <code>/help</code> command to see how to use me 😜",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             } // end AdminCommands::Approve
             AdminCommands::Reject(user_id) => {
                 // Get the user to reject from the database.
@@ -954,6 +979,14 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "I' sorry to inform you, that your request was <b>rejected</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             }
             AdminCommands::Ban(user_id) => {
                 // Get the user to approve from the database.
@@ -1013,6 +1046,14 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "I'm sorry to inform you that you were <b>banned</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             }
         } // end match
 
@@ -1109,6 +1150,14 @@ impl BotService {
 
                 // Inform about success.
                 bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "You were made a <b>Superuser</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
             } // end SuperuserCommands::MakeSuperuser
             SuperuserCommands::GetSuperusers => {
                 Self::display_users_by_role(&bot, &msg, RoleId::Superuser, conn).await?;
@@ -1303,7 +1352,7 @@ impl BotService {
                     // Inform a user that they are rejected.
                     bot.send_message(
                         msg.chat.id,
-                        "We are sorry to inform you that your request was rejected.",
+                        "I'm sorry to inform you that your request was rejected.",
                     )
                     .parse_mode(ParseMode::Html)
                     .await?;
@@ -1315,12 +1364,9 @@ impl BotService {
                 // The user is banned.
                 StatusId::Banned => {
                     // Inform a user that they are banned.
-                    bot.send_message(
-                        msg.chat.id,
-                        "We are sorry to inform you that you were banned.",
-                    )
-                    .parse_mode(ParseMode::Html)
-                    .await?;
+                    bot.send_message(msg.chat.id, "I'm sorry to inform you that you were banned.")
+                        .parse_mode(ParseMode::Html)
+                        .await?;
 
                     return Ok(Err(()));
                 } // end StatusId::Banned

@@ -14,9 +14,7 @@
 //    Location: Middle-earth
 // ```
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
-use trading_bot::{
-    handlers::bot::bot_service::BotService, utils::credential_security::CredentialSecurity,
-};
+use trading_bot::utils::credential_security::CredentialSecurity;
 
 type MyDialogue = Dialogue<State, InMemStorage<State>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -37,8 +35,9 @@ pub enum State {
 
 #[tokio::main]
 async fn main() {
-    let bot =
-        BotService::new_bot(&CredentialSecurity::decode_env_var("TG_BOT_API").unwrap()).unwrap();
+    let tg_bot_api: String = CredentialSecurity::decode_env_var("TG_BOT_API").unwrap();
+
+    let bot = Bot::new(&tg_bot_api);
 
     Dispatcher::builder(
         bot,

@@ -7,7 +7,6 @@ use crypto_botters::{
     bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
     Client,
 };
-use diesel::BoolExpressionMethods;
 use serde_json::json;
 
 use rust_decimal::Decimal;
