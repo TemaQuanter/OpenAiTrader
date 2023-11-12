@@ -32,6 +32,7 @@ diesel::table! {
         status_id -> Int4,
         exchange_api_key -> Nullable<Varchar>,
         exchange_api_secret -> Nullable<Varchar>,
+        exchange_api_data_validated -> Bool,
         deposit -> Nullable<Numeric>,
         risk -> Nullable<Numeric>,
         bot_active -> Bool,

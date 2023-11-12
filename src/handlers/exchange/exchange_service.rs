@@ -144,6 +144,9 @@ impl ExchangeService {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
+        // Validate exchange response.
+        Self::validate_exchange_response(&response)?;
+
         // Return the balance of the wallet in USDT.
         Ok(Decimal::from_str_exact(
             &response["result"]["list"][0]["coin"][0]["equity"]
@@ -167,6 +170,9 @@ impl ExchangeService {
             )
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate exchange response.
+        Self::validate_exchange_response(&response)?;
 
         // Parse the data into a DTO.
 
@@ -199,6 +205,9 @@ impl ExchangeService {
             )
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate exchange response.
+        Self::validate_exchange_response(&response)?;
 
         // Parse the data into a DTO.
 

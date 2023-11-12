@@ -255,6 +255,7 @@ impl BotService {
                         status_id: StatusId::Pending as i32,
                         exchange_api_key: None,
                         exchange_api_secret: None,
+                        exchange_api_data_validated: false,
                         deposit: None,
                         risk: None,
                         bot_active: false,
@@ -419,6 +420,27 @@ impl BotService {
                 // Update the risk per trade.
                 registered_user.exchange_api_key = Some(exchange_api_key);
 
+                // Check whether or not the exchange API secret is set.
+                if registered_user.exchange_api_secret.is_some() {
+                    // Try to connect to the user's account on the exchange.
+
+                    // Get user credentials.
+                    let api_key = registered_user.exchange_api_key.clone().unwrap();
+                    let api_secret = registered_user.exchange_api_secret.clone().unwrap();
+
+                    // Get an exchange client.
+                    let client = ExchangeService::get_client(api_key, api_secret);
+                    let res = ExchangeService::get_uta_usdt_balance(&client).await;
+
+                    // If the result is OK, then the account is reachable.
+                    if res.is_ok() {
+                        registered_user.exchange_api_data_validated = true;
+                    } else {
+                        // The account is not reachable.
+                        registered_user.exchange_api_data_validated = false;
+                    } // end if
+                } // end if
+
                 // Save the changes to the database.
                 match User::update(&registered_user, conn) {
                     Ok(registered_user) => registered_user,
@@ -461,6 +483,27 @@ impl BotService {
 
                 // Update the risk per trade.
                 registered_user.exchange_api_secret = Some(exchange_api_secret);
+
+                // Check whether or not the exchange API key is set.
+                if registered_user.exchange_api_key.is_some() {
+                    // Try to connect to the user's account on the exchange.
+
+                    // Get user credentials.
+                    let api_key = registered_user.exchange_api_key.clone().unwrap();
+                    let api_secret = registered_user.exchange_api_secret.clone().unwrap();
+
+                    // Get an exchange client.
+                    let client = ExchangeService::get_client(api_key, api_secret);
+                    let res = ExchangeService::get_uta_usdt_balance(&client).await;
+
+                    // If the result is OK, then the account is reachable.
+                    if res.is_ok() {
+                        registered_user.exchange_api_data_validated = true;
+                    } else {
+                        // The account is not reachable.
+                        registered_user.exchange_api_data_validated = false;
+                    } // end if
+                } // end if
 
                 // Save the changes to the database.
                 match User::update(&registered_user, conn) {
@@ -554,22 +597,47 @@ impl BotService {
                 }; // end match
 
                 // Convert some optional fields into convenient-to-read format.
+
+                // Check whether or not the deposit is set.
                 let deposit = if registered_user.deposit.is_none() {
-                    String::from("None")
+                    String::from("Not set")
                 } else {
                     String::from("$") + registered_user.deposit.unwrap().to_string().as_str()
                 }; // end if
 
+                // Check whether or not the risk is set.
                 let risk = if registered_user.risk.is_none() {
-                    String::from("None")
+                    String::from("Not set")
                 } else {
                     registered_user.risk.unwrap().to_string() + "%"
                 }; // end if
 
+                // Check whether or not the exchange API key is set.
+                let exchange_api_key_info = if registered_user.exchange_api_key.is_none() {
+                    String::from("Not set")
+                } else {
+                    String::from("Set, but unsafe to show")
+                }; // end if
+
+                // Check whether or not the exchange API secret is set.
+                let exchange_api_secret_info = if registered_user.exchange_api_secret.is_none() {
+                    String::from("Not set")
+                } else {
+                    String::from("Set, but unsafe to show")
+                }; // end if
+
+                // Get a status whether or not the bot is able to access the exchange
+                // with the provided keys.
+                let exchange_api_data_validated = if registered_user.exchange_api_data_validated {
+                    String::from("✅ API data is <b>valid</b>!")
+                } else {
+                    String::from("❌ API data is <b>invalid</b>")
+                }; // end if
+
                 // Generate a message with current user settings.
                 let cur_settings_message = format!(
-                    "<b>⚙️Settings⚙️</b>\n\n<b>💰 Deposit:</b> {}\n<b>❗️ Risk:</b> {}\n\n<b>🔑 API Exchange key:</b> <em>Unsafe to show</em>\n<b>㊙️ API Exchange secret:</b> <em>Unsafe to show</em>\n\n<b>🔥 Bot allowed to trade:</b> {}",
-                        deposit, risk, registered_user.bot_active
+                    "<b>⚙️Settings⚙️</b>\n\n<b>💰 Deposit:</b> {}\n<b>❗️ Risk:</b> {}\n\n<b>🔑 API Exchange key:</b> <em>{}</em>\n<b>㊙️ API Exchange secret:</b> <em>{}</em>\n\n{}\n\n<b>🔥 Bot allowed to trade:</b> {}",
+                        deposit, risk, exchange_api_key_info, exchange_api_secret_info, exchange_api_data_validated, registered_user.bot_active
                 );
 
                 // Send the current settings to the user.
@@ -579,7 +647,7 @@ impl BotService {
             } // end UserCommands::GetSettings
             UserCommands::CheckExchangeApiConnection => {
                 // Verify the user.
-                let registered_user = match Self::get_user_and_verify_role(
+                let mut registered_user = match Self::get_user_and_verify_role(
                     &bot,
                     &msg,
                     registered_user,
@@ -615,17 +683,23 @@ impl BotService {
                 } // end if
 
                 // Get user credentials.
-                let api_key = registered_user.exchange_api_key.unwrap();
-                let api_secret = registered_user.exchange_api_secret.unwrap();
+                let api_key = registered_user.exchange_api_key.clone().unwrap();
+                let api_secret = registered_user.exchange_api_secret.clone().unwrap();
 
                 // Get an exchange client.
                 let client = ExchangeService::get_client(api_key, api_secret);
+
+                // This variable indicates whether or not it was possible to reach out the
+                // user's account on the exchange.
+                let account_is_accessible: bool;
 
                 // Try to get the deposit of the user on the exchange via
                 // provided API keys.
                 match ExchangeService::get_uta_usdt_balance(&client).await {
                     Ok(balance) => {
                         // It was possible to get the user balance.
+                        account_is_accessible = true;
+
                         // Inform the user about that.
 
                         bot.send_message(msg.chat.id, format!("<b>I'm able to access your account!🥳🥳🥳</b>\n\nYou have <b>${}</b> for trading :)", balance.floor())).parse_mode(ParseMode::Html).await?;
@@ -633,9 +707,30 @@ impl BotService {
                     Err(error) => {
                         log::error!("{}", error);
 
+                        // There was an issue while accessing the user account.
+                        account_is_accessible = false;
+
                         // Inform a user about the issue.
                         bot.send_message(msg.chat.id, "I'm not able to access you account...😔😔😔\nPlease, make sure that you provided the right API key and API secret.").parse_mode(ParseMode::Html).await?;
                     } // end Err.
+                }; // end match
+
+                registered_user.exchange_api_data_validated = account_is_accessible;
+
+                // Save the changes to the database.
+                match User::update(&registered_user, conn) {
+                    Ok(registered_user) => registered_user,
+                    Err(error) => {
+                        // Inform the user that an error occurred.
+                        bot.send_message(msg.chat.id, ERROR_MESSAGE)
+                            .parse_mode(ParseMode::Html)
+                            .await?;
+
+                        log::error!("{}", error);
+
+                        // Exit the command execution.
+                        return Ok(());
+                    } // end Err
                 }; // end match
 
                 return Ok(());

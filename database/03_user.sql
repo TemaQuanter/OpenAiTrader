@@ -13,6 +13,9 @@ CREATE TABLE users(
     exchange_api_key VARCHAR(200),
     -- Exchange API secret of a user.
     exchange_api_secret VARCHAR(200),
+    -- Whether or not the bot was able to get the access to the user
+    -- account on the exchange via provided API key and API secret.
+    exchange_api_data_validated BOOLEAN NOT NULL,
     -- The deposit that is used to calculate a volume per trade from.
     deposit NUMERIC(12, 2),
     -- The risk (in %) that is used  to calculate a volume per trade from.

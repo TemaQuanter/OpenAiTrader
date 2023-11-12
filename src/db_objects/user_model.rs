@@ -27,6 +27,9 @@ pub struct User {
     pub exchange_api_key: Option<String>,
     /// API secret from user's account on the exchange.
     pub exchange_api_secret: Option<String>,
+    /// Whether or not the bot was able to get the access to the user
+    /// account on the exchange via provided API key and API secret.
+    pub exchange_api_data_validated: bool,
     /// Deposit that is used to calculate the volume for a trade.
     /// (In USDT)
     pub deposit: Option<Decimal>,

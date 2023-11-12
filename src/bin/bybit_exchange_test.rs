@@ -27,10 +27,15 @@ async fn main() {
     // Get database connection.
     let conn = &mut DatabaseService::get_pool_connection(&pg_connection_pool).unwrap();
 
-    let client = ExchangeService::get_client(key, secret);
+    // let client = ExchangeService::get_client(key, secret);
 
     // Get a test user from the database.
     let test_user = User::get_from_db_by_id(test_user_telegram_id, conn).unwrap();
+
+    let client = ExchangeService::get_client(
+        test_user.exchange_api_key.unwrap(),
+        test_user.exchange_api_secret.unwrap(),
+    );
 
     // ExchangeService::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
     //     .await
@@ -43,12 +48,12 @@ async fn main() {
     //         .unwrap()
     // );
 
-    // println!(
-    //     "{}",
-    //     ExchangeService::get_uta_usdt_balance(&client)
-    //         .await
-    //         .unwrap()
-    // );
+    println!(
+        "{}",
+        ExchangeService::get_uta_usdt_balance(&client)
+            .await
+            .unwrap()
+    );
 
     // println!(
     //     "{:#?}",
@@ -88,12 +93,12 @@ async fn main() {
     //     percentage_to_close: dec!(100.0),
     // };
 
-    let position_increase = PositionIncrease {
-        ticker: "XRPUSDT".to_string(),
-        direction: "short".to_string(),
-        new_stop: dec!(0.69),
-        percentage_to_increase: dec!(100.0),
-    };
+    // let position_increase = PositionIncrease {
+    //     ticker: "XRPUSDT".to_string(),
+    //     direction: "short".to_string(),
+    //     new_stop: dec!(0.69),
+    //     percentage_to_increase: dec!(100.0),
+    // };
 
     // println!(
     //     "{}",
@@ -120,12 +125,12 @@ async fn main() {
     // .await
     // .unwrap();
 
-    ExchangeService::increase_position_on_perpetual_swaps(
-        Arc::new(position_increase),
-        test_user.clone(),
-    )
-    .await
-    .unwrap();
+    // ExchangeService::increase_position_on_perpetual_swaps(
+    //     Arc::new(position_increase),
+    //     test_user.clone(),
+    // )
+    // .await
+    // .unwrap();
 
     // ExchangeService::adjust_stop_loss_on_perpetual_swaps(&stop_loss_adjustment, &client)
     //     .await
