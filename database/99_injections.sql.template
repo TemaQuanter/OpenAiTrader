@@ -1,0 +1,5 @@
+-- Make an injection of trusted superusers into the database.
+INSERT INTO users (telegram_id, telegram_username, status_id, role_id)
+VALUES
+(${TG_SUPERUSER_ID}, '${TG_SUPERUSER_USERNAME}', ${TG_SUPERUSER_STATUS_ID}, ${TG_SUPERUSER_ROLE_ID})
+ON CONFLICT (telegram_id) DO NOTHING;

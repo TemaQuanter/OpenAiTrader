@@ -7,3 +7,12 @@ target/
 
 # Some secret information.
 secrets/
+
+# ChatGPT fine tuning data.
+gpt_fine_tuning/
+
+# Helper developers' scripts
+scripts/
+
+# Extra programs
+src/bin/

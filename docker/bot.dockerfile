@@ -1,5 +1,22 @@
-# Use an official Rust runtime as the parent image
-FROM rust:1.72.1
+# Use Ubuntu as the base image
+FROM ubuntu:20.04
+
+# Avoid prompts from apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Update and install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    gcc \
+    pkg-config \
+    libssl-dev \
+    # Add the PostgreSQL client library
+    libpq-dev
+
+# Install Rust (use a specific version or latest stable)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set the working directory in the container to /app
 WORKDIR /app
@@ -8,8 +25,10 @@ WORKDIR /app
 COPY . .
 
 # Make the data folder persistent.
-VOLUME "/app/data"
+VOLUME ["/app/data"]
+
+# Build your application
+RUN cargo build --release
 
 # Set the command to run your application when the docker container starts
-CMD ["cargo", "run", "--release", "--bin", "trading_bot"]
-
+CMD ["./target/release/trading_bot"]

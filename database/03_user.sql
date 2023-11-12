@@ -15,13 +15,13 @@ CREATE TABLE users(
     exchange_api_secret VARCHAR(200),
     -- Whether or not the bot was able to get the access to the user
     -- account on the exchange via provided API key and API secret.
-    exchange_api_data_validated BOOLEAN NOT NULL,
+    exchange_api_data_validated BOOLEAN NOT NULL DEFAULT FALSE,
     -- The deposit that is used to calculate a volume per trade from.
     deposit NUMERIC(12, 2),
     -- The risk (in %) that is used  to calculate a volume per trade from.
     risk NUMERIC(5, 2),
     -- Whether or not bot is allowed to trade for this user.
-    bot_active BOOLEAN NOT NULL,
+    bot_active BOOLEAN NOT NULL DEFAULT FALSE,
     -- The user role.
     role_id INT REFERENCES role (role_id) NOT NULL
 ); -- end create table user

@@ -17,7 +17,7 @@ docker rm open_ai_trader_db
 docker rmi open_ai_trader_db
 
 # Create a new image.
-docker build -t open_ai_trader_db -f docker/database.dockerfile .
+docker build -t open_ai_trader_db -f docker/postgresql.dockerfile .
 
 # echo "POSTGRES_USER=$POSTGRES_USER"
 # echo "POSTGRES_PASSWORD=$POSTGRES_PASSWORD"
