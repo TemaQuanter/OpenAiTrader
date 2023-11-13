@@ -3,6 +3,7 @@
     "artem",
     "botters",
     "Bybit",
+    "checkexchangeapiconnection",
     "chrono",
     "contenteditable",
     "convo",
@@ -23,7 +24,7 @@
     "teloxide",
     "tiktoken",
     "tpsl"
-],
+  ],
   "[python]": {
     "editor.defaultFormatter": "ms-python.autopep8"
   },

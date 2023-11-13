@@ -590,6 +590,18 @@ impl BotService {
                     None => return Ok(()),
                 }; // end match
 
+                // Check whether or not the pair of API key and secret is
+                // verified for switching the bot on.
+                if bot_active && !registered_user.exchange_api_data_validated {
+                    // Inform the user that it is impossible to switch on the
+                    // bot as their credentials are not verified.
+                    bot.send_message(msg.chat.id, "Your API credentials are not verified, \
+                    if you are sure they are correct, please use <code>/checkexchangeapiconnection</code> command \
+                    to verify them").parse_mode(ParseMode::Html).await?;
+
+                    return Ok(());
+                } // end if
+
                 // Update the deposit to calculate risk from.
                 registered_user.bot_active = bot_active;
 
@@ -726,6 +738,14 @@ impl BotService {
                     .await?;
                     return Ok(());
                 } // end if
+
+                // Inform the user that there is an attempt to access their account.
+                bot.send_message(
+                    msg.chat.id,
+                    "Please, wait a little bit.\n\
+                I'm trying to access your account...",
+                )
+                .await?;
 
                 // Get user credentials.
                 let api_key = registered_user.exchange_api_key.clone().unwrap();
