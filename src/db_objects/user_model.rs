@@ -80,6 +80,18 @@ impl User {
         Ok(updated_user)
     } // end fn update
 
+    /// This function sets a telegram username in the database to NULL.
+    pub fn set_username_to_null(
+        user: &User,
+        conn: &mut PgConnection,
+    ) -> Result<Self, diesel::result::Error> {
+        let updated_user: Self = diesel::update(user)
+            .set(crate::schema::users::dsl::telegram_username.eq(Option::<String>::None))
+            .get_result(conn)?;
+
+        Ok(updated_user)
+    } // end fn set_username_to_null
+
     /// This function retrieves an array of users with a particular status
     pub fn get_users_with_status(
         status_id: &StatusId,

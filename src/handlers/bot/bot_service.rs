@@ -236,6 +236,51 @@ impl BotService {
             UserCommands::Start => {
                 // Check if the user is already registered.
                 if registered_user.is_some() {
+                    // Safely unwrap the registered user.
+                    let mut registered_user = registered_user.unwrap();
+
+                    // Check whether or not the user telegram username was changed.
+                    if user.username != registered_user.telegram_username {
+                        // Update the username.
+                        registered_user.telegram_username = user.username.clone();
+
+                        // Check if the user removed their username, then
+                        // set it to NULL.
+                        if registered_user.telegram_username.is_none() {
+                            // Save the changes to the database.
+                            match User::set_username_to_null(&registered_user, conn) {
+                                Ok(registered_user) => registered_user,
+                                Err(error) => {
+                                    // Inform the user that an error occurred.
+                                    bot.send_message(msg.chat.id, ERROR_MESSAGE)
+                                        .parse_mode(ParseMode::Html)
+                                        .await?;
+
+                                    log::error!("{}", error);
+
+                                    // Exit the command execution.
+                                    return Ok(());
+                                } // end Err
+                            }; // end match
+                        } else {
+                            // Save the changes to the database.
+                            match User::update(&registered_user, conn) {
+                                Ok(registered_user) => registered_user,
+                                Err(error) => {
+                                    // Inform the user that an error occurred.
+                                    bot.send_message(msg.chat.id, ERROR_MESSAGE)
+                                        .parse_mode(ParseMode::Html)
+                                        .await?;
+
+                                    log::error!("{}", error);
+
+                                    // Exit the command execution.
+                                    return Ok(());
+                                } // end Err
+                            }; // end match
+                        } // end if
+                    } // end if
+
                     // Great the user.
                     bot.send_message(msg.chat.id, "Welcome to <b>OPEN-AI-TRADER</b> bot!")
                         .parse_mode(ParseMode::Html)
@@ -817,6 +862,19 @@ impl BotService {
                 Self::display_users_by_role(&bot, &msg, RoleId::Admin, conn).await?
             } // end AdminCommands::GetAdmins
             AdminCommands::MakeAdmin(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to make an admin from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -883,6 +941,19 @@ impl BotService {
                 .await?;
             } // end AdminCommands::MakeAdmin
             AdminCommands::MakeUser(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to make a user from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -949,6 +1020,19 @@ impl BotService {
                 .await?;
             } // end AdminCommands::MakeUser
             AdminCommands::Approve(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to approve from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -1017,6 +1101,19 @@ impl BotService {
                 .await?;
             } // end AdminCommands::Approve
             AdminCommands::Reject(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to reject from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -1084,6 +1181,19 @@ impl BotService {
                 .await?;
             }
             AdminCommands::Ban(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to approve from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -1178,7 +1288,7 @@ impl BotService {
             &bot,
             &msg,
             registered_user,
-            vec![RoleId::Admin, RoleId::Superuser],
+            vec![RoleId::Superuser],
         )
         .await?
         {
@@ -1189,6 +1299,19 @@ impl BotService {
         // Handle superuser command.
         match cmd {
             SuperuserCommands::MakeSuperuser(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
                 // Get the user to make a superuser from the database.
                 let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
                     Ok(edited_user) => edited_user,
@@ -1482,9 +1605,7 @@ impl BotService {
         allowed_roles: Vec<RoleId>,
     ) -> ResponseResult<Option<User>> {
         // Check if the user is registered.
-        // The second check (if general user is allowed) is made
-        // not to disclose admin commands.
-        if user.is_none() && allowed_roles.contains(&RoleId::User) {
+        if user.is_none() {
             // The user is not registered in the service.
             // Ask a user to register with '/start' command.
             bot.send_message(
@@ -1690,4 +1811,29 @@ impl BotService {
         // Compare two roles as numbers and return the result.
         caller_role_num >= other_role_num
     } // end fn is_higher_or_same_role
+
+    /// This function protects a user from self-modification.
+    /// It disallows a user to change their own role or status for safety reasons.
+    ///
+    /// The function returns:
+    ///     true - if the user is not trying to modify themselves.
+    ///     false - otherwise.
+    async fn protect_from_self_modification(
+        bot: &Throttle<Bot>,
+        msg: &Message,
+        caller_id: i64,
+        other_id: i64,
+    ) -> ResponseResult<bool> {
+        // If the user is trying to modify themselves, then reject the request.
+        if caller_id == other_id {
+            // Inform the user that it is impossible to do so.
+            bot.send_message(msg.chat.id, "You cannot modify yourself")
+                .parse_mode(ParseMode::Html)
+                .await?;
+
+            return Ok(false);
+        } // end if
+
+        Ok(true)
+    } // end protect_from_self_modification
 } // end impl BotService
