@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import base64
 
 # Path to the dataset to train the model on.
-DATASET_PATH = "datasets/dataset.jsonl"
+DATASET_PATH = "datasets/dataset_v2.jsonl"
 
 # Import environmental variables from .env file into the module.
 load_dotenv()
@@ -18,7 +18,7 @@ openai.api_key = base64.b64decode(os.getenv("OPENAI_API_KEY")).decode('utf-8')
 file_upload_response = openai.File.create(
     file=open(DATASET_PATH, "rb"),
     purpose="fine-tune",
-    user_provided_filename="dataset"
+    user_provided_filename="dataset-v2"
 )
 
 # Display information about uploaded file.

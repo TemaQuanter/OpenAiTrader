@@ -17,3 +17,6 @@
 
 # Private dataset.
 /gpt_fine_tuning/raw_datasets
+
+# Private data.
+scripts/server_upload.sh

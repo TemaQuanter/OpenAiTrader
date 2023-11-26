@@ -161,7 +161,7 @@ impl MessageService {
             } // end if
         } // end loop
 
-        println!("Legend:\n{:#?}", &trade_legend);
+        // println!("Legend:\n{:#?}", &trade_legend);
 
         // Check if the last inserted message is a signal.
         if Self::is_signal(trade_legend.last().unwrap()) {
