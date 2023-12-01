@@ -550,20 +550,48 @@ impl ExchangeService {
         // for long position or higher than the upper bound for short position,
         // then it is unsafe to get into the position.
 
+        // It is also unsafe to get into the position if the price rose
+        // above the upper entry bound for long position or fell below
+        // the lower bound for short position.
+        //
+        // Explanation:
+        //
+        // The risk/reward ratio is not reasonable anymore.
+
         // This rule applies only to the market orders, not conditional ones.
         if position_opening.order_type == "market" {
             // Check whether it is a short or long position.
             if position_opening.direction == "Buy"
                 && position_opening.lower_bound_entry > cur_market_price
             {
+                // The asset price fell below the lower bound for entrance
+                // into a long position.
                 return Err(AppError::new(
                     "The market price is lower than the minimum entry price",
                 )); // end return
-            } else if position_opening.direction == "Short"
+            } else if position_opening.direction == "Sell"
                 && position_opening.lower_bound_entry < cur_market_price
             {
+                // The asset price rose above the lower bound for entrance
+                // into a short position.
                 return Err(AppError::new(
                     "The market price is higher than the minimum entry price",
+                )); // end return
+            } else if position_opening.direction == "Buy"
+                && position_opening.upper_bound_entry < cur_market_price
+            {
+                // The asset price rose above the upper bound for entrance
+                // into a long position.
+                return Err(AppError::new(
+                    "The market price is higher than the maximum entry price",
+                )); // end return
+            } else if position_opening.direction == "Sell"
+                && position_opening.upper_bound_entry > cur_market_price
+            {
+                // The asset price fell below the upper bound for entrance
+                // into a short position.
+                return Err(AppError::new(
+                    "The market price is lower than the maximum entry price",
                 )); // end return
             } // end if
         } // end if
