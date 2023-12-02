@@ -28,11 +28,25 @@ struct SampleDialog {
 
 /// This function saves all changes on HTML page to the training dataset.
 async fn save_changes(Json(dataset): Json<serde_json::Value>) {
-    // Get all responses as an array of strings.
+    // Get all requests and responses as an array of strings.
+    let mut requests: Vec<String> = Vec::new();
     let mut responses: Vec<String> = Vec::new();
 
     // This array stores all updated examples for a dataset.
     let mut new_examples: Vec<String> = Vec::new();
+
+    // Traverse each request and save it as a string.
+    for request in dataset["requests"].as_array().unwrap().into_iter() {
+        // Unwrap the value as a string.
+        let request = if let Value::String(val) = request {
+            val.to_string()
+        } else {
+            String::new()
+        }; // end if
+
+        // Add the formatted request to the array of requests.
+        requests.push(request);
+    } // end for
 
     // Traverse each response and save it as a string.
     for response in dataset["responses"].as_array().unwrap().into_iter() {
@@ -61,6 +75,9 @@ async fn save_changes(Json(dataset): Json<serde_json::Value>) {
         // Parse the line into a sample dialog.
         let mut sample_dialog = serde_json::from_str::<SampleDialog>(&line).unwrap();
 
+        // Replace the last request of a user with the new request.
+        sample_dialog.messages[2].content = requests[ind].to_string();
+
         // Replace the last reply of assistant with the response.
         sample_dialog.messages[3].content = responses[ind].to_string();
 
@@ -87,6 +104,7 @@ async fn save_changes(Json(dataset): Json<serde_json::Value>) {
 /// It retrieves the most recent data and sends it to font-end.
 async fn get_data() -> Json<serde_json::Value> {
     // Initialize an array where to store all responses.
+    let mut requests: Vec<String> = Vec::new();
     let mut responses: Vec<String> = Vec::new();
 
     // Open a file with a dataset.
@@ -103,12 +121,16 @@ async fn get_data() -> Json<serde_json::Value> {
         // Parse the line into a sample dialog.
         let sample_dialog = serde_json::from_str::<SampleDialog>(&line).unwrap();
 
+        requests.push(sample_dialog.messages[2].content.to_string());
         responses.push(sample_dialog.messages[3].content.to_string());
         // Add a sample response into the array with responses.
     } // end for
 
     // Assign the array with responses to the endpoint response.
-    let response_data: serde_json::Value = json!({ "responses": responses });
+    let response_data: serde_json::Value = json!({
+        "requests": requests,
+        "responses": responses
+    });
 
     Json(response_data)
 } // end fn get_data

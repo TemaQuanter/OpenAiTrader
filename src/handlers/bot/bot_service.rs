@@ -1471,13 +1471,6 @@ impl BotService {
             } // end Err
         } // end match
 
-        // Check if the time of the post is still appropriate for handling.
-        if msg.date - Utc::now() > chrono::Duration::minutes(3) {
-            // Skip handling of the message, as its relevance is
-            // very low.
-            return Ok(());
-        } // end if
-
         // Handle a new post.
         match MessageService::handle_message(msg, bot_state, &bot).await {
             Ok(_) => {

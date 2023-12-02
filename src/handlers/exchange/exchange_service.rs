@@ -231,11 +231,17 @@ impl ExchangeService {
 
     /// This function executes an exchange order on perpetual swaps for every single user
     /// asynchronously.
+    ///
+    /// Return values:
+    /// Element 1 - the number of threads that executed successfully.
+    /// Element 2 - the number of threads that failed during execution.
+    /// Element 3 - the number of tasks that were completed successfully.
+    /// Element 4 - the number of tasks that failed.
     pub async fn execute_exchange_order_for_all_users<T, Out>(
         exchange_order: Arc<T>,
         func: fn(Arc<T>, User) -> Out,
         bot_state: BotState,
-    ) -> Result<(i32, i32), AppError>
+    ) -> Result<(i32, i32, i32, i32), AppError>
     where
         T: Send + Sync + 'static,
         Out: Future<Output = Result<(), AppError>> + Send + 'static,
@@ -254,12 +260,20 @@ impl ExchangeService {
             // Create a new task.
             let new_task = tokio::spawn(async move {
                 // Try to open a position on perpetual swaps.
-                func(exchange_order_clone, user).await
+                let res = func(exchange_order_clone, user).await;
+
+                println!("{:#?}", res);
+
+                res
             });
 
             // Add the task to the array of running tasks.
             async_tasks.push(new_task);
         } // end for
+
+        // Count failed and successful threads.
+        let mut successful_threads = 0;
+        let mut failed_threads = 0;
 
         // Count positive and negative results.
         let mut positive_results = 0;
@@ -267,18 +281,40 @@ impl ExchangeService {
 
         // Wait for all tasks to complete.
         for tsk in async_tasks {
-            if let Err(error) = tsk.await {
-                // The task finished with error.
-                negative_results += 1;
+            // Check if the thread completed successfully.
+            match tsk.await {
+                // The thread completed successfully.
+                Ok(tsk) => {
+                    // Increment the successful threads counter.
+                    successful_threads += 1;
 
-                log::error!("{}", error);
-            } else {
-                // The result was OK.
-                positive_results += 1;
-            } // end if
+                    // Check if the operation succeeded for a user.
+                    if let Err(error) = tsk {
+                        // The task finished with error.
+                        negative_results += 1;
+
+                        log::error!("{}", error);
+                    } else {
+                        // The result was OK.
+                        positive_results += 1;
+                    } // end if
+                } // end Ok
+                Err(error) => {
+                    // Increment failed threads counter.
+                    failed_threads += 1;
+
+                    // Log the error.
+                    log::error!("{}", error.to_string());
+                } // end Err
+            } // end match
         } // end for
 
-        return Ok((positive_results, negative_results));
+        return Ok((
+            successful_threads,
+            failed_threads,
+            positive_results,
+            negative_results,
+        ));
     } // end fn execute_exchange_order_for_all_users
 
     /// This function parses the raw JSON object with an opened position
@@ -580,6 +616,7 @@ impl ExchangeService {
             } else if position_opening.direction == "Buy"
                 && position_opening.upper_bound_entry < cur_market_price
             {
+                println!("Price too high caught!");
                 // The asset price rose above the upper bound for entrance
                 // into a long position.
                 return Err(AppError::new(

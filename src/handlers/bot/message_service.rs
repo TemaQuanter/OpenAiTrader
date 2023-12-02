@@ -41,6 +41,9 @@ impl MessageService {
         // Acquire the conversation.
         let mut chatgpt_conversation = bot_state.chatgpt_conversation.lock().await;
 
+        // Make a copy of message date.
+        let message_date = message.date;
+
         // Try to assemble a trade legend.
         let trade_legend = Self::assemble_trade_legend(message, bot_state.clone()).await;
 
@@ -63,6 +66,21 @@ impl MessageService {
         // Check if it is most likely to be a signal or not.
         if trade_legend.is_none() {
             // It is less likely to be a signal.
+            return Ok(());
+        } // end if
+
+        // Check if the time of the post is still appropriate for handling.
+        if Utc::now() - message_date > chrono::Duration::minutes(3) {
+            // Inform that the relevance of the message is low.
+            BotService::inform_client(
+                &bot,
+                bot_state.log_channel_id,
+                "The message is no longer relevant, skipping",
+            )
+            .await?;
+
+            // Skip handling of the message, as its relevance is
+            // very low.
             return Ok(());
         } // end if
 
@@ -424,13 +442,13 @@ impl MessageService {
     /// This function sends information about successes and failures after executing
     /// an order on the exchange for multiple users.
     async fn send_exchange_order_execution_feedback(
-        res: Result<(i32, i32), AppError>,
+        res: Result<(i32, i32, i32, i32), AppError>,
         bot: &Throttle<Bot>,
         bot_state: &BotState,
     ) {
         // Unwrap the result and send an appropriate feedback.
         match res {
-            Ok((successes, failures)) => {
+            Ok((successful_threads, failed_threads, successes, failures)) => {
                 log::info!("The attempt to execute orders for all users was successful!");
 
                 // Inform the users in log channel about the success/failure statistics.
@@ -438,11 +456,13 @@ impl MessageService {
                     bot,
                     bot_state.log_channel_id,
                     format!(
-                        "🟢<b>The order was executed successfully!</b>🟢\n\
-                <b>Statistics:</b>\n\
-                <b>🟢Successes🟢</b> {}\n\
-                <b>🔴Failures🔴</b> {}",
-                        successes, failures
+                        "<b>🟢 The order was executed successfully!</b>\n\n\
+                <b>📊 Statistics:</b>\n\n\
+                <b>😃 Successful threads:</b> {}\n\
+                <b>😔 Failed threads:</b> {}\n\n\
+                <b>🟢 Successes:</b> {}\n\
+                <b>🔴 Failures:</b> {}",
+                        successful_threads, failed_threads, successes, failures
                     ),
                 )
                 .await
@@ -460,7 +480,7 @@ impl MessageService {
                     bot,
                     bot_state.log_channel_id,
                     format!(
-                        "🔴<b>Failed to execute the order for all users!</b>🔴\n\
+                        "<b>🔴 Failed to execute the order for all users!</b>\n\n\
                 <b>Error:</b> {}",
                         error
                     ),
