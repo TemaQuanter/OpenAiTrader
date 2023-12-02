@@ -100,7 +100,7 @@ impl MessageService {
         Self::react_to_signal(chatgpt_message, bot, bot_state.clone()).await?;
 
         // Remove a message from the history in order not to waste tokens.
-        chatgpt_conversation.history.truncate(2);
+        chatgpt_conversation.history.truncate(1);
 
         // Inform a client about the result.
 

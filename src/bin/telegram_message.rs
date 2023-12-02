@@ -1,3 +1,4 @@
+use chrono::Utc;
 use teloxide::{
     adaptors::{throttle::Limits, Throttle},
     requests::{Requester, RequesterExt},
@@ -15,7 +16,9 @@ async fn main() {
     let bot = Bot::new(&tg_bot_api).throttle(Limits::default());
 
     teloxide::repl(bot, |bot: Throttle<Bot>, msg: Message| async move {
-        println!("{}", msg.date);
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        println!("{}", Utc::now() - msg.date);
+        println!("{}", Utc::now() - msg.date > chrono::Duration::seconds(5));
         bot.send_dice(msg.chat.id).await?;
         Ok(())
     })

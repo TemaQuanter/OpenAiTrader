@@ -82,9 +82,9 @@ impl ExchangeService {
         };
 
         // Check if their balance is over some minimum limit.
-        if balance < dec!(500) {
-            return false;
-        } // end if
+        // if balance < dec!(500) {
+        //     return false;
+        // } // end if
 
         // The candidate passed all checks and is eligible to trade.
         true
@@ -260,11 +260,7 @@ impl ExchangeService {
             // Create a new task.
             let new_task = tokio::spawn(async move {
                 // Try to open a position on perpetual swaps.
-                let res = func(exchange_order_clone, user).await;
-
-                println!("{:#?}", res);
-
-                res
+                func(exchange_order_clone, user).await
             });
 
             // Add the task to the array of running tasks.
@@ -500,6 +496,14 @@ impl ExchangeService {
             position_opening.order_type = "conditional".to_string();
         } // end if
 
+        // Make sure that lower bound entry is always equal or less than upper bound entry.
+        if position_opening.lower_bound_entry > position_opening.upper_bound_entry {
+            // Swap them.
+            let temp = position_opening.lower_bound_entry;
+            position_opening.lower_bound_entry = position_opening.upper_bound_entry;
+            position_opening.upper_bound_entry = temp;
+        } // end if
+
         // Parse the side received from ChatGPT into a proper
         // format for exchange API.
         if position_opening.direction.to_lowercase().as_str() == "long" {
@@ -596,39 +600,18 @@ impl ExchangeService {
 
         // This rule applies only to the market orders, not conditional ones.
         if position_opening.order_type == "market" {
-            // Check whether it is a short or long position.
-            if position_opening.direction == "Buy"
-                && position_opening.lower_bound_entry > cur_market_price
-            {
+            // Check if the price is withing the given range.
+            if position_opening.lower_bound_entry > cur_market_price {
                 // The asset price fell below the lower bound for entrance
-                // into a long position.
+                // into a position.
                 return Err(AppError::new(
                     "The market price is lower than the minimum entry price",
                 )); // end return
-            } else if position_opening.direction == "Sell"
-                && position_opening.lower_bound_entry < cur_market_price
-            {
-                // The asset price rose above the lower bound for entrance
-                // into a short position.
-                return Err(AppError::new(
-                    "The market price is higher than the minimum entry price",
-                )); // end return
-            } else if position_opening.direction == "Buy"
-                && position_opening.upper_bound_entry < cur_market_price
-            {
-                println!("Price too high caught!");
+            } else if position_opening.upper_bound_entry < cur_market_price {
                 // The asset price rose above the upper bound for entrance
-                // into a long position.
+                // into a position.
                 return Err(AppError::new(
                     "The market price is higher than the maximum entry price",
-                )); // end return
-            } else if position_opening.direction == "Sell"
-                && position_opening.upper_bound_entry > cur_market_price
-            {
-                // The asset price fell below the upper bound for entrance
-                // into a short position.
-                return Err(AppError::new(
-                    "The market price is lower than the maximum entry price",
                 )); // end return
             } // end if
         } // end if
@@ -797,7 +780,7 @@ impl ExchangeService {
 
         // The number of partial take profits to set.
         // It is float, as it is necessary for further calculations.
-        let number_take_profits = Decimal::from_str_exact("3.0").unwrap();
+        let number_take_profits = dec!(3.0);
 
         // Calculate the quantity to close on each partial take profit.
         let partial_qty =
