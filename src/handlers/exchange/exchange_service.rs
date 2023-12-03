@@ -73,7 +73,7 @@ impl ExchangeService {
         let client = Self::get_client(exchange_api_key, exchange_api_secret);
 
         // Try to get the candidate's balance.
-        let balance = match Self::get_uta_usdt_balance(&client).await {
+        let _balance = match Self::get_uta_usdt_balance(&client).await {
             Ok(balance) => balance,
             Err(_error) => {
                 // The candidate's account is unreachable.
