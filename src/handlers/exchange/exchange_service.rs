@@ -821,7 +821,7 @@ impl ExchangeService {
 
     /// This function increases the size of an opened position on perpetual swaps.
     pub async fn increase_position_on_perpetual_swaps(
-        position_increase: Arc<PositionIncrease>,
+        position_increase_order: Arc<PositionIncrease>,
         user: User,
     ) -> Result<(), AppError> {
         // Get user credentials.
@@ -838,19 +838,19 @@ impl ExchangeService {
         let mut position_to_increase: Option<OpenedPosition> = None;
 
         // Shadow position increase order in order to modify it.
-        let mut position_increase = (*position_increase).clone();
+        let mut position_increase_order = (*position_increase_order).clone();
 
         // A special parameter that is required to identify a position side in a hedge-mode.
         let position_idx: i32;
 
         // Convert the position direction into the standard required by the exchange.
-        if position_increase.direction == "long" {
-            position_increase.direction = "Buy".to_string();
+        if position_increase_order.direction == "long" {
+            position_increase_order.direction = "Buy".to_string();
 
             // Set a special index to opening a long position in a hedge-mode.
             position_idx = 1;
-        } else if position_increase.direction == "short" {
-            position_increase.direction = "Sell".to_string();
+        } else if position_increase_order.direction == "short" {
+            position_increase_order.direction = "Sell".to_string();
 
             // Set a special index to opening a short position in a hedge-mode.
             position_idx = 2;
@@ -863,8 +863,8 @@ impl ExchangeService {
         for opened_position in opened_positions {
             // Check whether or not the current position is the position
             // to increase the size of.
-            if opened_position.ticker == position_increase.ticker
-                && opened_position.side == position_increase.direction
+            if opened_position.ticker == position_increase_order.ticker
+                && opened_position.side == position_increase_order.direction
             {
                 // It is the position to increase the size of.
                 position_to_increase = Some(opened_position);
@@ -886,15 +886,69 @@ impl ExchangeService {
         let position_to_increase = position_to_increase.unwrap();
 
         // Calculate the quantity it is necessary to buy/sell to increase the position size.
-        let extra_qty =
-            position_to_increase.qty * (position_increase.percentage_to_increase / dec!(100.0));
+        let extra_qty = position_to_increase.qty
+            * (position_increase_order.percentage_to_increase / dec!(100.0));
 
         // Get the price step of the asset on perpetual swaps.
         let qty_step =
-            Self::get_quantity_step_on_perpetual_swaps(&client, &position_increase.ticker).await?;
+            Self::get_quantity_step_on_perpetual_swaps(&client, &position_increase_order.ticker)
+                .await?;
 
         // Round the quantity.
         let extra_qty = Decimal::ceil(&(extra_qty / qty_step)) * qty_step;
+
+        // Check that the user has risk set.
+        if user.risk.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Risk is not set for the user"));
+        } // end if
+
+        // Check that the user has deposit set.
+        if user.deposit.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Deposit is not set for the user"));
+        } // end if
+
+        // Safely unwrap risk and deposit.
+        let risk = user.risk.unwrap();
+        let deposit = user.deposit.unwrap();
+
+        // New average entry price.
+        let new_avg_entry_price = (position_to_increase.qty * position_to_increase.avg_entry_price
+            + extra_qty * position_to_increase.last_market_price)
+            / (position_to_increase.qty + extra_qty);
+
+        // Check what direction this deal should be applied to.
+        if position_increase_order.direction == "Buy" {
+            // This is a long position increase.
+            // Check that the new average entry price and the new stop
+            // would not make a risk more than one risk unit, set by the user.
+            if (new_avg_entry_price - position_increase_order.new_stop)
+                * (position_to_increase.qty + extra_qty)
+                > (risk / dec!(100.0)) * deposit
+            {
+                // The risk is unacceptable.
+                return Err(AppError::new(
+                    "The new position condition exceeds the maximum risk limit",
+                ));
+            } // end if
+        } else if position_increase_order.direction == "Sell" {
+            // This is a short position to increase.
+            // Check that the new average entry price and the new stop
+            // would not make a risk more than one risk unit, set by the user.
+            if (position_increase_order.new_stop - new_avg_entry_price)
+                * (position_to_increase.qty + extra_qty)
+                > (risk / dec!(100.0)) * deposit
+            {
+                // The risk is unacceptable.
+                return Err(AppError::new(
+                    "The new position condition exceeds the maximum risk limit",
+                ));
+            } // end if
+        } else {
+            // This is an error. There is no third option available.
+            return Err(AppError::new("Only Sell and Buy directions supported"));
+        } // end if
 
         // Place an order to increase the position size on perpetual swaps.
         let response: serde_json::Value = client
@@ -902,11 +956,11 @@ impl ExchangeService {
                 "/v5/order/create",
                 Some(json!({
                     "category": "linear",
-                    "symbol": position_increase.ticker,
-                    "side": position_increase.direction,
+                    "symbol": position_increase_order.ticker,
+                    "side": position_increase_order.direction,
                     "orderType": "Market",
                     "qty": extra_qty.to_string(),
-                    "stopLoss": position_increase.new_stop.to_string(),
+                    "stopLoss": position_increase_order.new_stop.to_string(),
                     "positionIdx": position_idx,
                 })),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
@@ -1104,16 +1158,54 @@ impl ExchangeService {
         // Safely unwrap the position.
         let cur_position = cur_position.unwrap();
 
-        // If the new stop loss is greater than the previous one,
-        // then reject the operation. Stop loss can only reduce
-        // the loss.
-        if ((position_side == "Buy")
-            && (stop_loss_adjustment.new_stop < cur_position.stop_loss_price))
-            || ((position_side == "Sell")
-                && (stop_loss_adjustment.new_stop > cur_position.stop_loss_price))
-        {
-            // Reject the operation.
-            return Err(AppError::new("Stop loss cannot increase the position risk"));
+        // Check that the user has risk set.
+        if user.risk.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Risk is not set for the user"));
+        } // end if
+
+        // Check that the user has deposit set.
+        if user.deposit.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Deposit is not set for the user"));
+        } // end if
+
+        // Safely unwrap risk and deposit.
+        let risk = user.risk.unwrap();
+        let deposit = user.deposit.unwrap();
+
+        // Check that the new stop loss does not exceed one unit of risk.
+        if cur_position.side == "Buy" {
+            // If the position side is buy and the new stop loss is greater
+            // than the current one, it is safe to change it, otherwise
+            // extra checks required.
+            if cur_position.stop_loss_price > stop_loss_adjustment.new_stop {
+                // Make sure that a new stop loss will not make a risk
+                // greater than one unit of risk, set by the user.
+                if (cur_position.avg_entry_price - stop_loss_adjustment.new_stop) * cur_position.qty
+                    > (risk / dec!(100.0)) * deposit
+                {
+                    // This new stop exceeds the maximum risk limit.
+                    return Err(AppError::new("The new stop exceeds the maximum risk limit"));
+                } // end if
+            } // end if
+        } else if cur_position.side == "Sell" {
+            // If the position side is sell and the new stop loss is lower
+            // than the current one, it is safe to change it, otherwise
+            // extra checks required.
+            if cur_position.stop_loss_price < stop_loss_adjustment.new_stop {
+                // Make sure that a new stop loss will not make a risk
+                // greater than one unit of risk, set by the user.
+                if (stop_loss_adjustment.new_stop - cur_position.avg_entry_price) * cur_position.qty
+                    > (risk / dec!(100.0)) * deposit
+                {
+                    // This new stop exceeds the maximum risk limit.
+                    return Err(AppError::new("The new stop exceeds the maximum risk limit"));
+                } // end if
+            } // end if
+        } else {
+            // Throw an error. The position cannot be anything else.
+            return Err(AppError::new("The position side can only be Buy or Sell"));
         } // end if
 
         // Get all the opened orders.
