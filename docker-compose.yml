@@ -28,3 +28,4 @@ services:
 
 volumes:
   openai-trader-postgres-data:
+    external: true
