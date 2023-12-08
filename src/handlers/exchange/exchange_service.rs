@@ -25,7 +25,10 @@ use crate::{
         },
         exchange::dto::OpenedOrder,
     },
-    utils::{app_error::AppError, database_service::DatabaseService},
+    utils::{
+        app_error::AppError, database_service::DatabaseService,
+        types_and_constants::SLIPPAGE_PERCENT,
+    },
 };
 
 use super::dto::OpenedPosition;
@@ -925,7 +928,7 @@ impl ExchangeService {
             // would not make a risk more than one risk unit, set by the user.
             if (new_avg_entry_price - position_increase_order.new_stop)
                 * (position_to_increase.qty + extra_qty)
-                > (risk / dec!(100.0)) * deposit
+                > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
             {
                 // The risk is unacceptable.
                 return Err(AppError::new(
@@ -938,7 +941,7 @@ impl ExchangeService {
             // would not make a risk more than one risk unit, set by the user.
             if (position_increase_order.new_stop - new_avg_entry_price)
                 * (position_to_increase.qty + extra_qty)
-                > (risk / dec!(100.0)) * deposit
+                > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
             {
                 // The risk is unacceptable.
                 return Err(AppError::new(
@@ -1183,7 +1186,7 @@ impl ExchangeService {
                 // Make sure that a new stop loss will not make a risk
                 // greater than one unit of risk, set by the user.
                 if (cur_position.avg_entry_price - stop_loss_adjustment.new_stop) * cur_position.qty
-                    > (risk / dec!(100.0)) * deposit
+                    > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
                 {
                     // This new stop exceeds the maximum risk limit.
                     return Err(AppError::new("The new stop exceeds the maximum risk limit"));
@@ -1197,7 +1200,7 @@ impl ExchangeService {
                 // Make sure that a new stop loss will not make a risk
                 // greater than one unit of risk, set by the user.
                 if (stop_loss_adjustment.new_stop - cur_position.avg_entry_price) * cur_position.qty
-                    > (risk / dec!(100.0)) * deposit
+                    > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
                 {
                     // This new stop exceeds the maximum risk limit.
                     return Err(AppError::new("The new stop exceeds the maximum risk limit"));

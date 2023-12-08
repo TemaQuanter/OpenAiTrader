@@ -1,3 +1,6 @@
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
+
 // The max length of ChatGPT history.
 // Currently out of use.
 pub const _CHAT_GPT_HISTORY_LENGTH: usize = 200;
@@ -10,3 +13,6 @@ pub const CHAT_GPT_MODEL: &str = "ft:gpt-3.5-turbo-0613:artem-mikheev::8RN67eso"
 
 // Error message for telegram users.
 pub const ERROR_MESSAGE: &str = "Something went wrong with me, please, try again later";
+
+// A slippage tolerance when adjusting stop loss on.
+pub const SLIPPAGE_PERCENT: Decimal = dec!(0.1);

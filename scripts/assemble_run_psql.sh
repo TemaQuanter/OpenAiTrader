@@ -24,4 +24,4 @@ docker build -t open_ai_trader_db -f docker/postgresql.dockerfile .
 # echo "POSTGRES_DB=$POSTGRES_DB"
 
 # Run the database.
-docker run -e POSTGRES_USER=$POSTGRES_USER -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD -e POSTGRES_DB=$POSTGRES_DB -d -p 5432:5432 --name open_ai_trader_db open_ai_trader_db
+docker run -e POSTGRES_USER=$POSTGRES_USER -e POSTGRES_PASSWORD=$POSTGRES_PASSWORD -e POSTGRES_DB=$POSTGRES_DB -e TG_SUPERUSER_ID=$TG_SUPERUSER_ID -e TG_SUPERUSER_USERNAME=$TG_SUPERUSER_USERNAME -e TG_SUPERUSER_STATUS_ID=$TG_SUPERUSER_STATUS_ID -e TG_SUPERUSER_ROLE_ID=$TG_SUPERUSER_ROLE_ID -d -p 5432:5432 --name open_ai_trader_db open_ai_trader_db
