@@ -76,7 +76,7 @@ impl ExchangeService {
         let client = Self::get_client(exchange_api_key, exchange_api_secret);
 
         // Try to get the candidate's balance.
-        let _balance = match Self::get_uta_usdt_balance(&client).await {
+        let _balance = match Self::get_uta_total_equity(&client).await {
             Ok(balance) => balance,
             Err(_error) => {
                 // The candidate's account is unreachable.
@@ -134,10 +134,9 @@ impl ExchangeService {
         Ok(eligible_users)
     } // end get_users_eligible_to_trade
 
-    /// This function returns the amount of USDT on Unified Trading Account.
-    /// Value is returned in USDT.
-    pub async fn get_uta_usdt_balance(client: &Client) -> Result<Decimal, AppError> {
-        // Get the information about USDT balance on UTA.
+    /// This function returns total equity of Unified Trading Account in USDT.
+    pub async fn get_uta_total_equity(client: &Client) -> Result<Decimal, AppError> {
+        // Get the information about UTA equity.
         let response: serde_json::Value = client
             .get(
                 "/v5/account/wallet-balance",
@@ -147,17 +146,19 @@ impl ExchangeService {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
+        println!("{:#?}", response);
+
         // Validate exchange response.
         Self::validate_exchange_response(&response)?;
 
         // Return the balance of the wallet in USDT.
         Ok(Decimal::from_str_exact(
-            &response["result"]["list"][0]["coin"][0]["equity"]
+            &response["result"]["list"][0]["totalEquity"]
                 .to_string()
                 .replace("\"", ""),
         )
         .unwrap())
-    } // end fn get_uta_usdt_balance
+    } // end fn get_uta_total_equity
 
     /// This function returns all the current opened
     /// perpetual swaps positions on UTA.
@@ -253,21 +254,24 @@ impl ExchangeService {
         let eligible_users = Self::get_users_eligible_to_trade(bot_state).await?;
 
         // An array that stores all asynchronous tasks.
-        let mut async_tasks: Vec<JoinHandle<Result<(), AppError>>> = Vec::new();
+        let mut async_tasks: Vec<(User, JoinHandle<Result<(), AppError>>)> = Vec::new();
 
         // Spawn a task for each user to execute the orders asynchronously.
         for user in eligible_users {
             // Clone the reference to the position opening.
             let exchange_order_clone = Arc::clone(&exchange_order);
 
+            // Get a clone of the user.
+            let user_clone = user.clone();
+
             // Create a new task.
             let new_task = tokio::spawn(async move {
-                // Try to open a position on perpetual swaps.
-                func(exchange_order_clone, user).await
+                // Try to execute an order on perpetual swaps.
+                func(exchange_order_clone, user_clone).await
             });
 
             // Add the task to the array of running tasks.
-            async_tasks.push(new_task);
+            async_tasks.push((user, new_task));
         } // end for
 
         // Count failed and successful threads.
@@ -281,18 +285,23 @@ impl ExchangeService {
         // Wait for all tasks to complete.
         for tsk in async_tasks {
             // Check if the thread completed successfully.
-            match tsk.await {
+            match tsk.1.await {
                 // The thread completed successfully.
-                Ok(tsk) => {
+                Ok(tsk_result) => {
                     // Increment the successful threads counter.
                     successful_threads += 1;
 
                     // Check if the operation succeeded for a user.
-                    if let Err(error) = tsk {
+                    if let Err(error) = tsk_result {
                         // The task finished with error.
                         negative_results += 1;
 
-                        log::error!("{}", error);
+                        log::error!(
+                            "[\"user_id\": {} \"username\": {}] : {}",
+                            tsk.0.telegram_id,
+                            tsk.0.telegram_username.unwrap_or("None".to_string()),
+                            error
+                        );
                     } else {
                         // The result was OK.
                         positive_results += 1;
@@ -303,7 +312,12 @@ impl ExchangeService {
                     failed_threads += 1;
 
                     // Log the error.
-                    log::error!("{}", error.to_string());
+                    log::error!(
+                        "[\"user_id\": {} \"username\": {}] : {}",
+                        tsk.0.telegram_id,
+                        tsk.0.telegram_username.unwrap_or("None".to_string()),
+                        error
+                    );
                 } // end Err
             } // end match
         } // end for

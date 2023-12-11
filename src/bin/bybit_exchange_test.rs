@@ -12,9 +12,9 @@ use trading_bot::{
 
 #[tokio::main]
 async fn main() {
-    let key = CredentialSecurity::decode_env_var("EXCHANGE_API").expect("no API key found");
-    let secret =
-        CredentialSecurity::decode_env_var("EXCHANGE_SECRET").expect("no API secret found");
+    // let key = CredentialSecurity::decode_env_var("EXCHANGE_API").expect("no API key found");
+    // let secret =
+    //     CredentialSecurity::decode_env_var("EXCHANGE_SECRET").expect("no API secret found");
 
     let test_user_telegram_id = CredentialSecurity::decode_env_var("TEST_USER_TG_ID")
         .expect("no test user tg id found")
@@ -48,12 +48,19 @@ async fn main() {
     //         .unwrap()
     // );
 
-    println!(
-        "{}",
-        ExchangeService::get_uta_usdt_balance(&client)
-            .await
-            .unwrap()
-    );
+    // println!(
+    //     "{}",
+    // ExchangeService::get_uta_total_equity(&client)
+    //         .await
+    //         .unwrap()
+    // );
+
+    // println!(
+    //     "{}",
+    //     ExchangeService::get_instrument_price_on_perpetual_swaps(&client, "1000LADYSUSDT")
+    //         .await
+    //         .unwrap()
+    // );
 
     // println!(
     //     "{:#?}",

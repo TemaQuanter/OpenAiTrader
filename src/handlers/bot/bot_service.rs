@@ -475,7 +475,7 @@ impl BotService {
 
                     // Get an exchange client.
                     let client = ExchangeService::get_client(api_key, api_secret);
-                    let res = ExchangeService::get_uta_usdt_balance(&client).await;
+                    let res = ExchangeService::get_uta_total_equity(&client).await;
 
                     // If the result is OK, then the account is reachable.
                     if res.is_ok() {
@@ -539,7 +539,7 @@ impl BotService {
 
                     // Get an exchange client.
                     let client = ExchangeService::get_client(api_key, api_secret);
-                    let res = ExchangeService::get_uta_usdt_balance(&client).await;
+                    let res = ExchangeService::get_uta_total_equity(&client).await;
 
                     // If the result is OK, then the account is reachable.
                     if res.is_ok() {
@@ -760,7 +760,7 @@ impl BotService {
 
                 // Try to get the deposit of the user on the exchange via
                 // provided API keys.
-                match ExchangeService::get_uta_usdt_balance(&client).await {
+                match ExchangeService::get_uta_total_equity(&client).await {
                     Ok(balance) => {
                         // It was possible to get the user balance.
                         account_is_accessible = true;
