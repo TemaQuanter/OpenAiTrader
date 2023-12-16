@@ -12,6 +12,7 @@ pub enum StatusId {
     Rejected,
     Approved,
     Banned,
+    Expired,
 } // end enum StatusId
 
 // Implement transformation from i32 to StatusId
@@ -22,6 +23,7 @@ impl From<i32> for StatusId {
             2 => StatusId::Rejected,
             3 => StatusId::Approved,
             4 => StatusId::Banned,
+            5 => StatusId::Expired,
             // Handle unexpected values appropriately, perhaps with a default case or an error
             _ => panic!("Invalid status id: {}", value),
         } // end match
@@ -36,6 +38,7 @@ impl From<StatusId> for i32 {
             StatusId::Rejected => 2,
             StatusId::Approved => 3,
             StatusId::Banned => 4,
+            StatusId::Expired => 5,
         } // end match
     } // end from
 } // end impl From<StatusId> for i32

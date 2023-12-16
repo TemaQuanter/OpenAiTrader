@@ -1608,6 +1608,15 @@ impl BotService {
 
                     return Ok(Err(()));
                 } // end StatusId::Banned
+                // User subscription to the bot expired.
+                StatusId::Expired => {
+                    // Inform a user that the subscription expired.
+                    bot.send_message(msg.chat.id, "Your subscription expired, please renew it.")
+                        .parse_mode(ParseMode::Html)
+                        .await?;
+
+                    return Ok(Err(()));
+                } // end StatusId::Expired
             } // end match
         } // end if
 
@@ -1706,6 +1715,7 @@ impl BotService {
                 StatusId::Rejected => "rejected",
                 StatusId::Approved => "approved",
                 StatusId::Banned => "banned",
+                StatusId::Expired => "expired",
             }; // end match
 
             // Inform a user that no users were found.

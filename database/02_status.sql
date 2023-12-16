@@ -14,4 +14,5 @@ VALUES
 ('pending', 'A user is awaiting an approval.'),
 ('rejected', 'A user is rejected and cannot use the bot.'),
 ('approved', 'A user is approved to use the bot.'),
-('banned', 'A user cannot use the bot anymore.');
+('banned', 'A user cannot use the bot anymore.'),
+('expired', 'The user subscription expired');

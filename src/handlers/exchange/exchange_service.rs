@@ -146,8 +146,6 @@ impl ExchangeService {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
-        println!("{:#?}", response);
-
         // Validate exchange response.
         Self::validate_exchange_response(&response)?;
 
@@ -596,6 +594,26 @@ impl ExchangeService {
             } // end "conditional"
             _ => return Err(AppError::new("Failed to parse order type")),
         }; // end match
+
+        // Check if it is a market order.
+        if position_opening.order_type == "market" {
+            // Get all positions currently opened for a user.
+            let opened_positions = Self::get_all_opened_positions(&client).await?;
+
+            // Check if the position is already opened.
+            // If so, then stop function execution.
+            for opened_position in opened_positions {
+                // Check if the current position is the position the function
+                // is trying to open.
+                if opened_position.ticker == position_opening.ticker
+                    && opened_position.side == position_opening.direction
+                {
+                    // This is a position that the function is trying to open.
+                    // Stop the function execution.
+                    return Err(AppError::new("The position is already opened"));
+                } // end if
+            } // end for
+        } // end if
 
         // Get the current market price of the contract.
         let cur_market_price =

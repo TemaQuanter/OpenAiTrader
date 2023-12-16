@@ -18,6 +18,7 @@ use utils::credential_security::CredentialSecurity;
 
 use crate::handlers::bot::bot_service::{BotService, BotState};
 use crate::handlers::bot::message_service::MessageService;
+use crate::handlers::server::run::run_server;
 use crate::utils::database_service::DatabaseService;
 // use crate::handlers::bot::bot_service::BotService;
 use crate::utils::types_and_constants::CHAT_GPT_MODEL;
@@ -94,6 +95,9 @@ async fn main() -> Result<(), AppError> {
         log_channel_id,
     };
 
+    // Cloned connection pool for server.
+    let cloned_pool_for_server = (*bot_state.pg_connection_pool).clone();
+
     // Set up bot listener (start listening for incoming messages)
     let bot_service = BotService::set_listener(bot.clone(), bot_state.clone()).await;
 
@@ -116,7 +120,12 @@ async fn main() -> Result<(), AppError> {
             // Run a separate task to remove "old" posts from the database.
             MessageService::remove_old_messages(bot_state.clone(), old_age, wait_time_secs, bot.clone()).await;
         } => {}
-            // Handle Ctrl + C
+        _ = async move {
+            // Run a server.
+            run_server(cloned_pool_for_server).await;
+        } => {}
+
+        // Handle Ctrl + C
         _ = tokio::signal::ctrl_c() => {}
     } // end tokio::select!
 

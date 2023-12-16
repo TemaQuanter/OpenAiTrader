@@ -30,6 +30,7 @@ function createMiniForms(dataset) {
     // Create elements
     const blockDiv = document.createElement("div");
     blockDiv.className = "block";
+    blockDiv.id = `block_${i + 1}`;
 
     const titleP = document.createElement("p");
     titleP.className = "block_title";
@@ -67,6 +68,23 @@ function createMiniForms(dataset) {
     saveButton.type = "submit";
     saveButton.innerHTML = "Save All changes";
 
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.innerHTML = "Remove element";
+
+    deleteButton.style.visibility = "hidden";
+
+    // Add an event listener to the button
+    deleteButton.addEventListener("click", function () {
+      // Select the element to remove.
+      const elementToRemove = this.parentElement;
+
+      // Remove the element
+      if (elementToRemove) {
+        elementToRemove.remove();
+      }
+    });
+
     // Append elements
     blockDiv.appendChild(titleP);
     blockDiv.appendChild(requestP);
@@ -76,6 +94,7 @@ function createMiniForms(dataset) {
     blockDiv.appendChild(hiddenInputRequest);
     blockDiv.appendChild(hiddenInputResponse);
     blockDiv.appendChild(saveButton);
+    blockDiv.appendChild(deleteButton);
 
     container.appendChild(blockDiv);
   }
