@@ -2,11 +2,7 @@
 
 use std::sync::Arc;
 
-use axum::{
-    http::Method,
-    routing::{get, put},
-    Router,
-};
+use axum::{http::Method, routing::put, Router};
 use diesel::{
     r2d2::{ConnectionManager, Pool},
     PgConnection,

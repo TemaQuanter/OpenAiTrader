@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use chatgpt::types::ChatMessage;
 use chrono::Utc;
 use diesel::PgConnection;
 use teloxide::{
@@ -101,6 +102,12 @@ impl MessageService {
 
         // Remove a message from the history in order not to waste tokens.
         chatgpt_conversation.history.truncate(1);
+
+        // Append ChatGPT reply on a system message.
+        chatgpt_conversation.history.push(ChatMessage {
+            role: chatgpt::types::Role::Assistant,
+            content: "OK".to_string(),
+        });
 
         // Inform a client about the result.
 

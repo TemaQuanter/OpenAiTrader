@@ -3,7 +3,10 @@
 
 use std::{fs, io::Read};
 
-use chatgpt::prelude::{ChatGPT, Conversation};
+use chatgpt::{
+    prelude::{ChatGPT, Conversation},
+    types::ChatMessage,
+};
 
 use super::{app_error::AppError, types_and_constants::CHAT_GPT_SEED_PROMPT_FILE};
 
@@ -27,7 +30,13 @@ impl ChatGPTService {
             .map_err(|error| AppError::new(error.to_string()))?;
 
         // Create a new conversation with a seed prompt.
-        let conversation = chatgpt_client.new_conversation_directed(seed_prompt);
+        let mut conversation = chatgpt_client.new_conversation_directed(seed_prompt);
+
+        // Append ChatGPT reply on a system message.
+        conversation.history.push(ChatMessage {
+            role: chatgpt::types::Role::Assistant,
+            content: "OK".to_string(),
+        });
 
         Ok(conversation)
     } // end fn get_conversation

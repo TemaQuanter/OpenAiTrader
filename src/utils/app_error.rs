@@ -1,7 +1,5 @@
 // This file contains a custom error type for the application.
 
-use axum::response::IntoResponse;
-use serde_json::json;
 use teloxide::RequestError;
 
 /// This structure represents a custom error for the application.

@@ -15,4 +15,4 @@ VALUES
 ('rejected', 'A user is rejected and cannot use the bot.'),
 ('approved', 'A user is approved to use the bot.'),
 ('banned', 'A user cannot use the bot anymore.'),
-('expired', 'The user subscription expired');
+('expired', 'User subscription expired.');
