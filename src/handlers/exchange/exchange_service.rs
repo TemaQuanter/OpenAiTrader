@@ -430,7 +430,7 @@ impl ExchangeService {
 
     /// This function retrieves the price step for a particular instrument
     /// on perpetual swaps in USDT.
-    pub async fn get_price_step_on_perpetual_swaps(
+    pub async fn _get_price_step_on_perpetual_swaps(
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
@@ -1014,7 +1014,7 @@ impl ExchangeService {
         user: User,
     ) -> Result<(), AppError> {
         // Get a clone of the user to be able to adjust a stop loss.
-        let user_clone = user.clone();
+        // let user_clone = user.clone();
 
         // Get user credentials.
         let api_key = user.exchange_api_key.unwrap();
@@ -1054,41 +1054,41 @@ impl ExchangeService {
         // Safely unwrap the position.
         let cur_position = cur_position.unwrap();
 
-        // If it is necessary to close only a part of the position,
-        // put the stop loss to non-loss.
-        if position_closure.percentage_to_close != dec!(100.0) {
-            // Get a price step of the opened position.
-            let price_step =
-                Self::get_price_step_on_perpetual_swaps(&client, &position_closure.ticker).await?;
+        // // If it is necessary to close only a part of the position,
+        // // put the stop loss to non-loss.
+        // if position_closure.percentage_to_close != dec!(100.0) {
+        //     // Get a price step of the opened position.
+        //     let price_step =
+        //         Self::get_price_step_on_perpetual_swaps(&client, &position_closure.ticker).await?;
 
-            // A new stop loss.
-            let stop_loss: Decimal;
+        //     // A new stop loss.
+        //     let stop_loss: Decimal;
 
-            // Determine which direction to adjust the stop loss in.
-            // Calculate a new stop loss.
-            if side == "Buy" {
-                // Set a stop loss in a slight profit for long position.
-                stop_loss = (Decimal::ceil(&(&cur_position.avg_entry_price / &price_step))
-                    + dec!(1.0))
-                    * price_step;
-            } else {
-                // Set a stop loss in a slight profit for short position.
-                stop_loss = (Decimal::floor(&(&cur_position.avg_entry_price / &price_step))
-                    - dec!(1.0))
-                    * price_step;
-            } // end if
+        //     // Determine which direction to adjust the stop loss in.
+        //     // Calculate a new stop loss.
+        //     if side == "Buy" {
+        //         // Set a stop loss in a slight profit for long position.
+        //         stop_loss = (Decimal::ceil(&(&cur_position.avg_entry_price / &price_step))
+        //             + dec!(1.0))
+        //             * price_step;
+        //     } else {
+        //         // Set a stop loss in a slight profit for short position.
+        //         stop_loss = (Decimal::floor(&(&cur_position.avg_entry_price / &price_step))
+        //             - dec!(1.0))
+        //             * price_step;
+        //     } // end if
 
-            // Put a stop loss to non-loss.
-            Self::adjust_stop_loss_on_perpetual_swaps(
-                Arc::new(StopLossAdjustment {
-                    ticker: position_closure.ticker.to_string(),
-                    direction: position_closure.direction.to_string(),
-                    new_stop: stop_loss,
-                }),
-                user_clone,
-            )
-            .await?;
-        } // end if
+        //     // Put a stop loss to non-loss.
+        //     Self::adjust_stop_loss_on_perpetual_swaps(
+        //         Arc::new(StopLossAdjustment {
+        //             ticker: position_closure.ticker.to_string(),
+        //             direction: position_closure.direction.to_string(),
+        //             new_stop: stop_loss,
+        //         }),
+        //         user_clone,
+        //     )
+        //     .await?;
+        // } // end if
 
         // A variable to determine what side of the position to close
         // (short/long). The parameter is required by API.
