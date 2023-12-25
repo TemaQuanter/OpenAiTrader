@@ -27,3 +27,4 @@ serde_json = "1.0.107"
 teloxide = { version = "0.12.2", features = ["macros", "throttle"] }
 tokio = { version = "1.32.0", features = ["full"] }
 chrono = { version = "0.4.31", features = ["serde"] }
+lazy_static = "1.4.0"

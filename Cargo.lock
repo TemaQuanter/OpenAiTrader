@@ -2499,6 +2499,7 @@ dependencies = [
  "diesel",
  "dotenv",
  "flexi_logger",
+ "lazy_static",
  "log",
  "rust_decimal",
  "rust_decimal_macros",

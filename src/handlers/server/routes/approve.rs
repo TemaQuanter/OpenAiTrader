@@ -4,6 +4,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
+use teloxide::{
+    payloads::SendMessageSetters,
+    requests::Requester,
+    types::{ChatId, ParseMode},
+};
 
 use crate::{
     db_objects::{status_model::StatusId, user_model::User},
@@ -80,6 +85,20 @@ pub async fn approve(
     if res.is_err() {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     } // end if
+
+    // Inform a user that they got approved for a bot usage.
+    app_state
+        .bot
+        .send_message(
+            ChatId(telegram_id),
+            "Your subscription is <b>activated</b>!\n\nYou can use me right now!😍",
+        )
+        .parse_mode(ParseMode::Html)
+        .await
+        .map_err(|error| {
+            log::error!("{}", error.to_string());
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     log::info!("Approved: {}", telegram_id);
     Ok(())

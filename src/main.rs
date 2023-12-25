@@ -20,8 +20,7 @@ use crate::handlers::bot::bot_service::{BotService, BotState};
 use crate::handlers::bot::message_service::MessageService;
 use crate::handlers::server::run::run_server;
 use crate::utils::database_service::DatabaseService;
-// use crate::handlers::bot::bot_service::BotService;
-use crate::utils::types_and_constants::CHAT_GPT_MODEL;
+use crate::utils::lazy_static::CHAT_GPT_MODEL;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -74,7 +73,7 @@ async fn main() -> Result<(), AppError> {
         ModelConfigurationBuilder::default()
             .api_url(Url::from_str(&chat_gpt_url).unwrap())
             .temperature(0.0)
-            .engine(ChatGPTEngine::Custom(CHAT_GPT_MODEL))
+            .engine(ChatGPTEngine::Custom(*CHAT_GPT_MODEL))
             .build()
             .unwrap(),
     )
@@ -98,11 +97,14 @@ async fn main() -> Result<(), AppError> {
     // Cloned connection pool for server.
     let cloned_pool_for_server = (*bot_state.pg_connection_pool).clone();
 
+    // Bot instance for a server.
+    let cloned_bot_for_server = bot.clone();
+
     // Set up bot listener (start listening for incoming messages)
     let bot_service = BotService::set_listener(bot.clone(), bot_state.clone()).await;
 
     // Determine the age of an "old" post.
-    let old_age = chrono::Duration::days(32);
+    let old_age = chrono::Duration::days(90);
 
     // Determine the frequency to remove "old" post with (in seconds).
     let wait_time_secs: u64 = 24 * 60 * 60;
@@ -122,7 +124,7 @@ async fn main() -> Result<(), AppError> {
         } => {}
         _ = async move {
             // Run a server.
-            run_server(cloned_pool_for_server).await;
+            run_server(cloned_pool_for_server, cloned_bot_for_server).await;
         } => {}
 
         // Handle Ctrl + C

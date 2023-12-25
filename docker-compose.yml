@@ -1,4 +1,4 @@
-version: "3"
+version: "3.8"
 
 services:
   trading-bot:
@@ -9,11 +9,12 @@ services:
     volumes:
       - ./data:/app/data
     depends_on:
-      - postgres
-    ports:
-      - 8080:8080
+      - postgres-openai-trader
+    networks:
+      - trading-bot-network
+      - internal-network
 
-  postgres:
+  postgres-openai-trader:
     build:
       context: .
       dockerfile: docker/postgresql.dockerfile
@@ -27,7 +28,14 @@ services:
       retries: 5
     volumes:
       - openai-trader-postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal-network
 
 volumes:
   openai-trader-postgres-data:
     external: true
+
+networks:
+  trading-bot-network:
+    external: true
+  internal-network:
