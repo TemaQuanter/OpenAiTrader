@@ -27,8 +27,8 @@ pub struct OpenedOrder {
     /// Position side (short/long)
     pub side: String,
     /// A trigger price at which the order is supposed to get executed.
-    pub trigger_price: String,
-    /// Type of the order (Stop Loss, Take Profit, etc).
+    pub trigger_price: Decimal,
+    /// Type of the order (Order, StopOrder, tpslOrder, etc).
     pub stop_order_type: String,
     /// Order ID.
     pub order_id: String,

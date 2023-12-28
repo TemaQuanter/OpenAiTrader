@@ -69,9 +69,9 @@ async fn main() {
         order_type: "market".to_string(),
         lower_bound_entry: dec!(7),
         upper_bound_entry: dec!(8),
-        stop_loss: None,
-        take_profit_lower_bound: None,
-        take_profit_upper_bound: None,
+        stop_loss: Some(dec!(6)),
+        take_profit_lower_bound: Some(dec!(10)),
+        take_profit_upper_bound: Some(dec!(12)),
     };
 
     let position_closure = dto_spot::PositionClosure {
@@ -85,7 +85,25 @@ async fn main() {
         new_stop: None,
     };
 
+    let stop_loss_adjustment = dto_spot::StopLossAdjustment {
+        ticker: "UNIUSDT".to_string(),
+        new_stop: dec!(7),
+    };
+
+    let order_removal = dto_spot::ConditionalOrderRemoval {
+        ticker: "UNIUSDT".to_string(),
+        trigger_price: dec!(7),
+    };
+
     // ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
+    //     .await
+    //     .unwrap();
+
+    // ExchangeServiceSpot::adjust_stop_loss(Arc::new(stop_loss_adjustment), test_user)
+    //     .await
+    //     .unwrap();
+
+    // ExchangeServiceSpot::cancel_order(Arc::new(order_removal), test_user)
     //     .await
     //     .unwrap();
 
