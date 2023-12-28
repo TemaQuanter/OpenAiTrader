@@ -428,6 +428,18 @@ impl ExchangeServicePerpetual {
             } // end if
         } // end if
 
+        // Check that the user has deposit set.
+        if user.deposit.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Deposit is not set for the user"));
+        } // end if
+
+        // Check that the user has risk set.
+        if user.risk.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Risk is not set for the user"));
+        } // end if
+
         // Calculate the price movement before stop loss in percentage.
         let stop_loss_percentage =
             (dec!(1.0) - (position_opening.stop_loss / cur_contract_price)).abs() * dec!(100.0);
@@ -635,6 +647,11 @@ impl ExchangeServicePerpetual {
         position_increase_order: Arc<PositionIncrease>,
         user: User,
     ) -> Result<(), AppError> {
+        // Check if position to increase is not greater than an adequate value.
+        if position_increase_order.percentage_to_increase > dec!(300) {
+            return Err(AppError::new("Inadequate risk"));
+        } // end if
+
         // Get user credentials.
         let api_key = user.exchange_api_key.unwrap();
         let api_secret = user.exchange_api_secret.unwrap();

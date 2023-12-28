@@ -14,7 +14,10 @@ use rust_decimal_macros::dec;
 
 use crate::{
     db_objects::user_model::User,
-    handlers::{bot::dto_spot::PositionOpening, exchange::dto_spot::OpenedOrder},
+    handlers::{
+        bot::dto_spot::{PositionClosure, PositionIncrease, PositionOpening},
+        exchange::dto_spot::OpenedOrder,
+    },
     utils::{app_error::AppError, types_and_constants::SPOT_OPENED_POSITION_BIAS_VALUE},
 };
 
@@ -69,13 +72,13 @@ impl ExchangeServiceSpot {
     /// spot position on UTA.
     pub async fn get_opened_position(
         client: &Client,
-        ticker: impl AsRef<str>,
+        coin: impl AsRef<str>,
     ) -> Result<OpenedPosition, AppError> {
         // Send a request and get the information about opened positions.
         let response: serde_json::Value = client
             .get(
                 "/v5/asset/transfer/query-account-coins-balance",
-                Some(&[("accountType", "UNIFIED"), ("coin", ticker.as_ref())]),
+                Some(&[("accountType", "UNIFIED"), ("coin", coin.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
             .await
@@ -383,6 +386,12 @@ impl ExchangeServiceSpot {
             } // end if
         } // end if
 
+        // Check that the user has deposit set.
+        if user.deposit.is_none() {
+            // The risk must be set.
+            return Err(AppError::new("Deposit is not set for the user"));
+        } // end if
+
         // Calculate the value of coins to buy/sell in USDT.
         let coins_value =
             user.deposit.unwrap() * (position_opening.percent_from_deposit / dec!(100));
@@ -415,7 +424,8 @@ impl ExchangeServiceSpot {
                 // The parameter is required.
                 serde_json::Value::String(trigger_price.unwrap().to_string())
             }, // end if
-            "orderFilter": order_filter
+            "orderFilter": order_filter,
+            "marketUnit": "baseCoin"
         }); // end post_request
 
         // Verify that the position is safe to open.
@@ -493,288 +503,191 @@ impl ExchangeServiceSpot {
         ExchangeService::validate_exchange_response(&response)
     } // end fn open_position
 
-    // /// This function increases the size of an opened position on perpetual swaps.
-    // pub async fn increase_position(
-    //     position_increase_order: Arc<PositionIncrease>,
-    //     user: User,
-    // ) -> Result<(), AppError> {
-    //     // Get user credentials.
-    //     let api_key = user.exchange_api_key.unwrap();
-    //     let api_secret = user.exchange_api_secret.unwrap();
+    /// This function increases the size of an opened position on perpetual swaps.
+    pub async fn increase_position(
+        position_increase_order: Arc<PositionIncrease>,
+        user: User,
+    ) -> Result<(), AppError> {
+        // Check if position to increase is not greater than an adequate value.
+        if position_increase_order.percentage_to_increase > dec!(300) {
+            return Err(AppError::new("Inadequate risk"));
+        } // end if
 
-    //     // Get an exchange client.
-    //     let client = ExchangeService::get_client(api_key, api_secret);
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
 
-    //     // Get all opened positions on perpetual swaps.
-    //     let opened_positions = Self::get_all_opened_positions(&client).await?;
+        // Get an exchange client.
+        let client = ExchangeService::get_client(api_key, api_secret);
 
-    //     // Initialize the position to increase;
-    //     let mut position_to_increase: Option<OpenedPosition> = None;
+        // Get a coin from the ticker.
+        let coin = match position_increase_order.ticker.strip_suffix("USDT") {
+            Some(coin) => coin,
+            None => {
+                return Err(AppError::new("Wrong ticker provided."));
+            }
+        }; // end None
 
-    //     // Shadow position increase order in order to modify it.
-    //     let mut position_increase_order = (*position_increase_order).clone();
+        // Initialize the position to increase;
+        let position_to_increase: OpenedPosition =
+            Self::get_opened_position(&client, coin)
+                .await
+                .map_err(|error| AppError::new(error.to_string()))?;
 
-    //     // A special parameter that is required to identify a position side in a hedge-mode.
-    //     let position_idx: i32;
+        // Get current market price of the asset.
+        let cur_market_price =
+            Self::get_instrument_ask_price(&client, &position_increase_order.ticker)
+                .await
+                .map_err(|error| AppError::new(error.to_string()))?;
 
-    //     // Convert the position direction into the standard required by the exchange.
-    //     if position_increase_order.direction == "long" {
-    //         position_increase_order.direction = "Buy".to_string();
+        // Check whether or not the current position is opened.
+        if position_to_increase.transfer_balance * cur_market_price
+            < SPOT_OPENED_POSITION_BIAS_VALUE
+        {
+            // Position is not opened, nothing to increase.
+            return Err(AppError::new("Position to increase is not opened."));
+        } // end if
 
-    //         // Set a special index to opening a long position in a hedge-mode.
-    //         position_idx = 1;
-    //     } else if position_increase_order.direction == "short" {
-    //         position_increase_order.direction = "Sell".to_string();
+        // Calculate the quantity it is necessary to buy to increase the position size.
+        let extra_qty = position_to_increase.transfer_balance
+            * (position_increase_order.percentage_to_increase / dec!(100.0));
 
-    //         // Set a special index to opening a short position in a hedge-mode.
-    //         position_idx = 2;
-    //     } else {
-    //         // The direction format is invalid.
-    //         return Err(AppError::new("Direction format is invalid"));
-    //     } // end if
+        // Get the price step of the asset on spot trading.
+        let qty_step = Self::get_quantity_step(&client, &position_increase_order.ticker).await?;
 
-    //     // Try to find the position to increase.
-    //     for opened_position in opened_positions {
-    //         // Check whether or not the current position is the position
-    //         // to increase the size of.
-    //         if opened_position.ticker == position_increase_order.ticker
-    //             && opened_position.side == position_increase_order.direction
-    //         {
-    //             // It is the position to increase the size of.
-    //             position_to_increase = Some(opened_position);
+        // Round the quantity.
+        let extra_qty = Decimal::ceil(&(extra_qty / qty_step)) * qty_step;
 
-    //             // There is no need to loop further, as the position
-    //             // is already found.
-    //             break;
-    //         } // end if
-    //     } // end for
+        println!("{:#?}", position_increase_order);
+        println!("{:#?}", position_to_increase);
+        println!("{:#?}", extra_qty);
 
-    //     // If the position to increase was not found, then return an error.
-    //     if position_to_increase.is_none() {
-    //         return Err(AppError::new(
-    //             "The position to increase the size of was not found",
-    //         )); // end return
-    //     } // end if
+        // Place an order to increase the position size on perpetual swaps.
+        let response: serde_json::Value = client
+            .post(
+                "/v5/order/create",
+                Some(json!({
+                    "category": "spot",
+                    "symbol": position_increase_order.ticker,
+                    "side": "Buy",
+                    "orderType": "Market",
+                    "qty": extra_qty.to_string(),
+                    "orderFilter": "Order",
+                    "marketUnit": "baseCoin"
+                })),
+                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+            )
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
-    //     // Safely unwrap the position to increase the size of.
-    //     let position_to_increase = position_to_increase.unwrap();
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)
+    } // end fn increase_position
 
-    //     // Calculate the quantity it is necessary to buy/sell to increase the position size.
-    //     let extra_qty = position_to_increase.qty
-    //         * (position_increase_order.percentage_to_increase / dec!(100.0));
+    /// This function closes a part of a position on perpetual swaps
+    /// in USDT.
+    pub async fn close_part_of_position(
+        position_closure: Arc<PositionClosure>,
+        user: User,
+    ) -> Result<(), AppError> {
+        // Get a clone of the user to be able to adjust a stop loss.
+        // let user_clone = user.clone();
 
-    //     // Get the price step of the asset on perpetual swaps.
-    //     let qty_step =
-    //         Self::get_quantity_step(&client, &position_increase_order.ticker)
-    //             .await?;
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
 
-    //     // Round the quantity.
-    //     let extra_qty = Decimal::ceil(&(extra_qty / qty_step)) * qty_step;
+        // Get an exchange client.
+        let client = ExchangeService::get_client(api_key, api_secret);
 
-    //     // Check that the user has risk set.
-    //     if user.risk.is_none() {
-    //         // The risk must be set.
-    //         return Err(AppError::new("Risk is not set for the user"));
-    //     } // end if
+        // Get a coin from the ticker.
+        let coin = match position_closure.ticker.strip_suffix("USDT") {
+            Some(coin) => coin,
+            None => {
+                return Err(AppError::new("Wrong ticker provided."));
+            } // end None
+        }; // end match
 
-    //     // Check that the user has deposit set.
-    //     if user.deposit.is_none() {
-    //         // The risk must be set.
-    //         return Err(AppError::new("Deposit is not set for the user"));
-    //     } // end if
+        // Get the position, which is necessary to close.
+        let opened_position = Self::get_opened_position(&client, coin).await?;
 
-    //     // Safely unwrap risk and deposit.
-    //     let risk = user.risk.unwrap();
-    //     let deposit = user.deposit.unwrap();
+        // Get current coin price.
+        let cur_coin_price = Self::get_instrument_ask_price(&client, &position_closure.ticker)
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
-    //     // New average entry price.
-    //     let new_avg_entry_price = (position_to_increase.qty * position_to_increase.avg_entry_price
-    //         + extra_qty * position_to_increase.last_market_price)
-    //         / (position_to_increase.qty + extra_qty);
+        // Check if there is anything to close.
+        if opened_position.transfer_balance * cur_coin_price < SPOT_OPENED_POSITION_BIAS_VALUE {
+            return Err(AppError::new("Position to close is not found"));
+        } // end if
 
-    //     // Check what direction this deal should be applied to.
-    //     if position_increase_order.direction == "Buy" {
-    //         // This is a long position increase.
-    //         // Check that the new average entry price and the new stop
-    //         // would not make a risk more than one risk unit, set by the user.
-    //         if (new_avg_entry_price - position_increase_order.new_stop)
-    //             * (position_to_increase.qty + extra_qty)
-    //             > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
-    //         {
-    //             // The risk is unacceptable.
-    //             return Err(AppError::new(
-    //                 "The new position condition exceeds the maximum risk limit",
-    //             ));
-    //         } // end if
-    //     } else if position_increase_order.direction == "Sell" {
-    //         // This is a short position to increase.
-    //         // Check that the new average entry price and the new stop
-    //         // would not make a risk more than one risk unit, set by the user.
-    //         if (position_increase_order.new_stop - new_avg_entry_price)
-    //             * (position_to_increase.qty + extra_qty)
-    //             > ((risk + SLIPPAGE_PERCENT) / dec!(100.0)) * deposit
-    //         {
-    //             // The risk is unacceptable.
-    //             return Err(AppError::new(
-    //                 "The new position condition exceeds the maximum risk limit",
-    //             ));
-    //         } // end if
-    //     } else {
-    //         // This is an error. There is no third option available.
-    //         return Err(AppError::new("Only Sell and Buy directions supported"));
-    //     } // end if
+        // // If it is necessary to close only a part of the position,
+        // // put the stop loss to non-loss.
+        // if position_closure.percentage_to_close != dec!(100.0) {
+        //     // Get a price step of the opened position.
+        //     let price_step =
+        //         Self::get_price_step(&client, &position_closure.ticker).await?;
 
-    //     // Place an order to increase the position size on perpetual swaps.
-    //     let response: serde_json::Value = client
-    //         .post(
-    //             "/v5/order/create",
-    //             Some(json!({
-    //                 "category": "linear",
-    //                 "symbol": position_increase_order.ticker,
-    //                 "side": position_increase_order.direction,
-    //                 "orderType": "Market",
-    //                 "qty": extra_qty.to_string(),
-    //                 "stopLoss": position_increase_order.new_stop.to_string(),
-    //                 "positionIdx": position_idx,
-    //             })),
-    //             [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-    //         )
-    //         .await
-    //         .map_err(|error| AppError::new(error.to_string()))?;
+        //     // A new stop loss.
+        //     let stop_loss: Decimal;
 
-    //     // Validate the response from exchange.
-    //     ExchangeService::validate_exchange_response(&response)
-    // } // end fn increase_position
+        //     // Determine which direction to adjust the stop loss in.
+        //     // Calculate a new stop loss.
+        //     if side == "Buy" {
+        //         // Set a stop loss in a slight profit for long position.
+        //         stop_loss = (Decimal::ceil(&(&cur_position.avg_entry_price / &price_step))
+        //             + dec!(1.0))
+        //             * price_step;
+        //     } else {
+        //         // Set a stop loss in a slight profit for short position.
+        //         stop_loss = (Decimal::floor(&(&cur_position.avg_entry_price / &price_step))
+        //             - dec!(1.0))
+        //             * price_step;
+        //     } // end if
 
-    // /// This function closes a part of a position on perpetual swaps
-    // /// in USDT.
-    // pub async fn close_part_of_position(
-    //     position_closure: Arc<PositionClosure>,
-    //     user: User,
-    // ) -> Result<(), AppError> {
-    //     // Get a clone of the user to be able to adjust a stop loss.
-    //     // let user_clone = user.clone();
+        //     // Put a stop loss to non-loss.
+        //     Self::adjust_stop_loss(
+        //         Arc::new(StopLossAdjustment {
+        //             ticker: position_closure.ticker.to_string(),
+        //             direction: position_closure.direction.to_string(),
+        //             new_stop: stop_loss,
+        //         }),
+        //         user_clone,
+        //     )
+        //     .await?;
+        // } // end if
 
-    //     // Get user credentials.
-    //     let api_key = user.exchange_api_key.unwrap();
-    //     let api_secret = user.exchange_api_secret.unwrap();
+        // Get the quantity step of the coin.
+        let quantity_step =
+            Self::get_quantity_step(&client, position_closure.ticker.to_string()).await?;
 
-    //     // Get an exchange client.
-    //     let client = ExchangeService::get_client(api_key, api_secret);
+        // Calculate the quantity to fix.
+        let qty =
+            opened_position.transfer_balance * (position_closure.percentage_to_close / dec!(100.0));
 
-    //     // Get all the currently opened position.
-    //     let opened_positions = Self::get_all_opened_positions(&client).await?;
+        // Adjust the quantity so to fit the quantity step restrictions.
+        let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
 
-    //     // A position that it is required to adjust.
-    //     let mut cur_position: Option<OpenedPosition> = None;
+        // Send a request to adjust the position size on perpetual swaps.
+        let response: serde_json::Value = client
+            .post(
+                "/v5/order/create",
+                Some(json!({
+                    "category": "spot",
+                    "symbol": position_closure.ticker,
+                    "side": "Sell",
+                    "orderType": "Market",
+                    "qty": qty.to_string(),
+                    "orderFilter": "Order",
+                    "marketUnit": "baseCoin"
+                })),
+                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+            )
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
 
-    //     // Convert coin direction from (short/long) to (Sell/Buy).
-    //     let side = if position_closure.direction.to_lowercase() == "long" {
-    //         "Buy"
-    //     } else {
-    //         "Sell"
-    //     }; // end if
-
-    //     // Traverse all the opened positions and select the required one.
-    //     for opened_position in opened_positions {
-    //         // Check if current position is the position being searched for.
-    //         if opened_position.ticker == position_closure.ticker && opened_position.side == side {
-    //             // This is the required position.
-    //             cur_position = Some(opened_position);
-    //             break;
-    //         } // end if
-    //     } // end for
-
-    //     // If the position was not found, then return an error.
-    //     if cur_position.is_none() {
-    //         return Err(AppError::new("The position to close is not found"));
-    //     } // end if
-
-    //     // Safely unwrap the position.
-    //     let cur_position = cur_position.unwrap();
-
-    //     // // If it is necessary to close only a part of the position,
-    //     // // put the stop loss to non-loss.
-    //     // if position_closure.percentage_to_close != dec!(100.0) {
-    //     //     // Get a price step of the opened position.
-    //     //     let price_step =
-    //     //         Self::get_price_step(&client, &position_closure.ticker).await?;
-
-    //     //     // A new stop loss.
-    //     //     let stop_loss: Decimal;
-
-    //     //     // Determine which direction to adjust the stop loss in.
-    //     //     // Calculate a new stop loss.
-    //     //     if side == "Buy" {
-    //     //         // Set a stop loss in a slight profit for long position.
-    //     //         stop_loss = (Decimal::ceil(&(&cur_position.avg_entry_price / &price_step))
-    //     //             + dec!(1.0))
-    //     //             * price_step;
-    //     //     } else {
-    //     //         // Set a stop loss in a slight profit for short position.
-    //     //         stop_loss = (Decimal::floor(&(&cur_position.avg_entry_price / &price_step))
-    //     //             - dec!(1.0))
-    //     //             * price_step;
-    //     //     } // end if
-
-    //     //     // Put a stop loss to non-loss.
-    //     //     Self::adjust_stop_loss(
-    //     //         Arc::new(StopLossAdjustment {
-    //     //             ticker: position_closure.ticker.to_string(),
-    //     //             direction: position_closure.direction.to_string(),
-    //     //             new_stop: stop_loss,
-    //     //         }),
-    //     //         user_clone,
-    //     //     )
-    //     //     .await?;
-    //     // } // end if
-
-    //     // A variable to determine what side of the position to close
-    //     // (short/long). The parameter is required by API.
-    //     let position_idx: i32;
-
-    //     // Close the position buy placing an order in the opposite direction.
-    //     let closure_side: &str;
-
-    //     // Determine what side to place the order on.
-    //     if side == "Buy" {
-    //         position_idx = 1;
-    //         closure_side = "Sell";
-    //     } else {
-    //         position_idx = 2;
-    //         closure_side = "Buy";
-    //     } // end if
-
-    //     // Get the quantity step of the coin.
-    //     let quantity_step =
-    //         Self::get_quantity_step(&client, cur_position.ticker).await?;
-
-    //     // Calculate the quantity to fix.
-    //     let qty = cur_position.qty * (position_closure.percentage_to_close / dec!(100.0));
-
-    //     // Adjust the quantity so to fit the quantity step restrictions.
-    //     let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
-
-    //     // Send a request to adjust the position size on perpetual swaps.
-    //     let response: serde_json::Value = client
-    //         .post(
-    //             "/v5/order/create",
-    //             Some(json!({
-    //                 "category": "linear",
-    //                 "symbol": position_closure.ticker,
-    //                 "side": closure_side,
-    //                 "orderType": "Market",
-    //                 "qty": qty.to_string(),
-    //                 "reduceOnly": true,
-    //                 "positionIdx": position_idx
-    //             })),
-    //             [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-    //         )
-    //         .await
-    //         .map_err(|error| AppError::new(error.to_string()))?;
-
-    //     ExchangeService::validate_exchange_response(&response)
-    // } // end fn close_part_of_position
+        ExchangeService::validate_exchange_response(&response)
+    } // end fn close_part_of_position
 
     // /// This function adjusts the stop loss of a particular position on
     // /// perpetual swaps in USDT.

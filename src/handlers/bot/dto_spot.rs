@@ -32,7 +32,7 @@ pub struct PositionIncrease {
     /// A ticker of the asset.
     pub ticker: String,
     /// A new stop loss.
-    pub new_stop: Decimal,
+    pub new_stop: Option<Decimal>,
     /// A percentage to increase the position by.
     pub percentage_to_increase: Decimal,
 } // end struct PositionIncrease

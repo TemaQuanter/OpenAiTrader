@@ -74,7 +74,26 @@ async fn main() {
         take_profit_upper_bound: None,
     };
 
-    ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
+    let position_closure = dto_spot::PositionClosure {
+        ticker: "UNIUSDT".to_string(),
+        percentage_to_close: dec!(100),
+    };
+
+    let position_increase = dto_spot::PositionIncrease {
+        ticker: "UNIUSDT".to_string(),
+        percentage_to_increase: dec!(300),
+        new_stop: None,
+    };
+
+    // ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
+    //     .await
+    //     .unwrap();
+
+    // ExchangeServiceSpot::increase_position(Arc::new(position_increase), test_user)
+    //     .await
+    //     .unwrap();
+
+    ExchangeServiceSpot::close_part_of_position(Arc::new(position_closure), test_user)
         .await
         .unwrap();
 
