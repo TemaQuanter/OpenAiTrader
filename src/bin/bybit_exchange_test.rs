@@ -4,8 +4,13 @@ use rust_decimal_macros::dec;
 use trading_bot::{
     db_objects::user_model::User,
     handlers::{
-        bot::dto::{PositionClosure, PositionIncrease, PositionOpening, StopLossAdjustment},
-        exchange::exchange_service::ExchangeService,
+        bot::dto_perpetual,
+        bot::dto_spot,
+        exchange::{
+            exchange_service::ExchangeService,
+            exchange_service_perpetual::ExchangeServicePerpetual,
+            exchange_service_spot::ExchangeServiceSpot,
+        },
     },
     utils::{credential_security::CredentialSecurity, database_service::DatabaseService},
 };
@@ -27,51 +32,87 @@ async fn main() {
     // Get database connection.
     let conn = &mut DatabaseService::get_pool_connection(&pg_connection_pool).unwrap();
 
-    // let client = ExchangeService::get_client(key, secret);
+    // let client = ExchangeServicePerpetual::get_client(key, secret);
 
     // Get a test user from the database.
     let test_user = User::get_from_db_by_id(test_user_telegram_id, conn).unwrap();
 
     let client = ExchangeService::get_client(
-        test_user.exchange_api_key.unwrap(),
-        test_user.exchange_api_secret.unwrap(),
+        test_user.exchange_api_key.clone().unwrap(),
+        test_user.exchange_api_secret.clone().unwrap(),
     );
 
-    // ExchangeService::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
+    // println!(
+    //     "{:#?}",
+    //     ExchangeServiceSpot::get_opened_position(&client, "USDT")
+    //         .await
+    //         .unwrap()
+    // );
+
+    // println!(
+    //     "{:#?}",
+    //     ExchangeServiceSpot::get_all_opened_orders(&client)
+    //         .await
+    //         .unwrap()
+    // );
+
+    // println!(
+    //     "{:#?}",
+    //     ExchangeServiceSpot::get_quantity_step(&client, "XRPUSDT")
+    //         .await
+    //         .unwrap()
+    // );
+
+    let position_opening = dto_spot::PositionOpening {
+        ticker: "UNIUSDT".to_string(),
+        percent_from_deposit: dec!(5),
+        order_type: "market".to_string(),
+        lower_bound_entry: dec!(7),
+        upper_bound_entry: dec!(8),
+        stop_loss: None,
+        take_profit_lower_bound: None,
+        take_profit_upper_bound: None,
+    };
+
+    ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
+        .await
+        .unwrap();
+
+    // ExchangeServicePerpetual::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
     //     .await
     //     .unwrap();
 
     // println!(
     //     "{:#?}",
-    //     ExchangeService::get_position_leverage(&client, &"XRPUSDT".to_string())
+    //     ExchangeServicePerpetual::get_position_leverage(&client, &"XRPUSDT".to_string())
     //         .await
     //         .unwrap()
     // );
 
     // println!(
     //     "{}",
-    // ExchangeService::get_uta_total_equity(&client)
+    // ExchangeServicePerpetual::get_uta_total_equity(&client)
     //         .await
     //         .unwrap()
     // );
 
     // println!(
     //     "{}",
-    //     ExchangeService::get_instrument_price_on_perpetual_swaps(&client, "1000LADYSUSDT")
+    //     ExchangeServicePerpetual::get_instrument_price_on_perpetual_swaps(&client, "1000LADYSUSDT")
     //         .await
     //         .unwrap()
     // );
 
     // println!(
     //     "{:#?}",
-    //     ExchangeService::get_all_opened_positions(&client)
+    //     ExchangeServicePerpetual::get_all_opened_positions(&client)
     //         .await
     //         .unwrap()
     // );
 
     // println!(
     //     "{}",
-    //     ExchangeService::get_instrument_price_on_perpetual_swaps(&client, "BTCUSDT")
+    //     ExchangeServicePerpetual::get_instrument_price_on_perpetual_swaps(&client, "BTCUSDT")
     //         .await
     //         .unwrap()
     // );
@@ -109,41 +150,41 @@ async fn main() {
 
     // println!(
     //     "{}",
-    //     ExchangeService::get_quantity_step_on_perpetual_swaps(&client, "SOLUSDT")
+    //     ExchangeServicePerpetual::get_quantity_step_on_perpetual_swaps(&client, "SOLUSDT")
     //         .await
     //         .unwrap()
     // );
 
     // println!(
     //     "{:#?}",
-    //     ExchangeService::get_all_opened_orders(&client)
+    //     ExchangeServicePerpetual::get_all_opened_orders(&client)
     //         .await
     //         .unwrap()
     // );
 
-    // ExchangeService::get_quantity_step_on_perpetual_swaps(&client, "ETHUSDT")
+    // ExchangeServicePerpetual::get_quantity_step_on_perpetual_swaps(&client, "ETHUSDT")
     //     .await
     //     .unwrap();
 
-    // ExchangeService::open_position_on_perpetual_swaps(
+    // ExchangeServicePerpetual::open_position_on_perpetual_swaps(
     //     Arc::new(position_opening),
     //     test_user.clone(),
     // )
     // .await
     // .unwrap();
 
-    // ExchangeService::increase_position_on_perpetual_swaps(
+    // ExchangeServicePerpetual::increase_position_on_perpetual_swaps(
     //     Arc::new(position_increase),
     //     test_user.clone(),
     // )
     // .await
     // .unwrap();
 
-    // ExchangeService::adjust_stop_loss_on_perpetual_swaps(&stop_loss_adjustment, &client)
+    // ExchangeServicePerpetual::adjust_stop_loss_on_perpetual_swaps(&stop_loss_adjustment, &client)
     //     .await
     //     .unwrap();
 
-    // ExchangeService::close_part_of_position_on_perpetual_swaps(&position_closure, &client)
+    // ExchangeServicePerpetual::close_part_of_position_on_perpetual_swaps(&position_closure, &client)
     //     .await
     //     .unwrap();
 

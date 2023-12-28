@@ -14,13 +14,18 @@ use teloxide::{
 
 use crate::{
     db_objects::channel_history::ChannelHistory,
-    handlers::{bot::bot_service::BotService, exchange::exchange_service::ExchangeService},
+    handlers::{
+        bot::bot_service::BotService,
+        exchange::{
+            exchange_service::ExchangeService, exchange_service_perpetual::ExchangeServicePerpetual,
+        },
+    },
     utils::{app_error::AppError, database_service::DatabaseService},
 };
 
 use super::{
     bot_service::BotState,
-    dto::{
+    dto_perpetual::{
         ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
         StopLossAdjustment,
     },
@@ -373,7 +378,7 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(position_opening),
-                    ExchangeService::open_position_on_perpetual_swaps,
+                    ExchangeServicePerpetual::open_position,
                     bot_state.clone(),
                 )
                 .await,
@@ -387,7 +392,7 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(position_increase),
-                    ExchangeService::increase_position_on_perpetual_swaps,
+                    ExchangeServicePerpetual::increase_position,
                     bot_state.clone(),
                 )
                 .await,
@@ -401,7 +406,7 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(order_removal),
-                    ExchangeService::cancel_order_on_perpetual_swaps,
+                    ExchangeServicePerpetual::cancel_order,
                     bot_state.clone(),
                 )
                 .await,
@@ -415,7 +420,7 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(position_closure),
-                    ExchangeService::close_part_of_position_on_perpetual_swaps,
+                    ExchangeServicePerpetual::close_part_of_position,
                     bot_state.clone(),
                 )
                 .await,
@@ -430,7 +435,7 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(stop_loss_adjustment),
-                    ExchangeService::adjust_stop_loss_on_perpetual_swaps,
+                    ExchangeServicePerpetual::adjust_stop_loss,
                     bot_state.clone(),
                 )
                 .await,

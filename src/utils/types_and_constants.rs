@@ -14,5 +14,8 @@ pub const ERROR_MESSAGE: &str = "Something went wrong with me, please, try again
 // A slippage tolerance when adjusting stop loss on.
 pub const SLIPPAGE_PERCENT: Decimal = dec!(0.1);
 
+// Spot opened position bias tolerance.
+pub const SPOT_OPENED_POSITION_BIAS_VALUE: Decimal = dec!(1.0);
+
 // Server address and port.
 pub const SERVER_ADDRESS: &str = "0.0.0.0:8080";
