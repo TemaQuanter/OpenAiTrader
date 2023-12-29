@@ -55,7 +55,7 @@ pub struct StopLossAdjustment {
     /// A ticker of the asset.
     pub ticker: String,
     /// A new stop.
-    pub new_stop: Decimal,
+    pub new_stop: Option<Decimal>,
 } // end struct StopLossAdjustment
 
 /// This structure represents a conditional order removal.

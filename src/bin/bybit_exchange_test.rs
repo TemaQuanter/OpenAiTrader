@@ -69,9 +69,9 @@ async fn main() {
         order_type: "market".to_string(),
         lower_bound_entry: dec!(7),
         upper_bound_entry: dec!(8),
-        stop_loss: Some(dec!(6)),
-        take_profit_lower_bound: Some(dec!(10)),
-        take_profit_upper_bound: Some(dec!(12)),
+        stop_loss: Some(dec!(7)),
+        take_profit_lower_bound: None,
+        take_profit_upper_bound: None,
     };
 
     let position_closure = dto_spot::PositionClosure {
@@ -81,13 +81,13 @@ async fn main() {
 
     let position_increase = dto_spot::PositionIncrease {
         ticker: "UNIUSDT".to_string(),
-        percentage_to_increase: dec!(300),
+        percentage_to_increase: dec!(50),
         new_stop: None,
     };
 
     let stop_loss_adjustment = dto_spot::StopLossAdjustment {
         ticker: "UNIUSDT".to_string(),
-        new_stop: dec!(7),
+        new_stop: Some(dec!(6.5)),
     };
 
     let order_removal = dto_spot::ConditionalOrderRemoval {

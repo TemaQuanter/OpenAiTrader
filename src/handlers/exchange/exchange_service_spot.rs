@@ -172,7 +172,8 @@ impl ExchangeServiceSpot {
         let opened_order = OpenedOrder {
             ticker: raw_opened_order["symbol"].to_string().replace("\"", ""),
             side: raw_opened_order["side"].to_string().replace("\"", ""),
-            qty: raw_opened_order["qty"].to_string().replace("\"", ""),
+            qty: Decimal::from_str_exact(&raw_opened_order["qty"].to_string().replace("\"", ""))
+                .unwrap(),
             trigger_price: Decimal::from_str_exact(
                 &raw_opened_order["triggerPrice"]
                     .to_string()
@@ -456,24 +457,21 @@ impl ExchangeServiceSpot {
             return ExchangeService::validate_exchange_response(&response);
         } // end if
 
-        // Check if there was stop loss information provided.
-        if position_opening.stop_loss.is_some() {
-            // Set a stop loss.
+        // Set a stop loss.
 
-            // Validate that the order was executed successfully.
-            let res = Self::adjust_stop_loss(
-                Arc::new(StopLossAdjustment {
-                    ticker: position_opening.ticker.to_string(),
-                    new_stop: position_opening.stop_loss.clone().unwrap(),
-                }),
-                cloned_user,
-            )
-            .await;
+        // Validate that the order was executed successfully.
+        let res = Self::adjust_stop_loss(
+            Arc::new(StopLossAdjustment {
+                ticker: position_opening.ticker.to_string(),
+                new_stop: position_opening.stop_loss.clone(),
+            }),
+            cloned_user,
+        )
+        .await;
 
-            // If there was an error, finish function execution.
-            if res.is_err() {
-                return Err(res.unwrap_err());
-            } // end if
+        // If there was an error, finish function execution.
+        if res.is_err() {
+            return Err(res.unwrap_err());
         } // end if
 
         // Check if there were no take profit information provided.
@@ -546,6 +544,9 @@ impl ExchangeServiceSpot {
             return Err(AppError::new("Inadequate risk"));
         } // end if
 
+        // Get a cloned user to use it for stop loss setup and adjustment.
+        let cloned_user = user.clone();
+
         // Get user credentials.
         let api_key = user.exchange_api_key.unwrap();
         let api_secret = user.exchange_api_secret.unwrap();
@@ -568,14 +569,13 @@ impl ExchangeServiceSpot {
                 .map_err(|error| AppError::new(error.to_string()))?;
 
         // Get current market price of the asset.
-        let cur_market_price =
+        let cur_coin_price =
             Self::get_instrument_ask_price(&client, &position_increase_order.ticker)
                 .await
                 .map_err(|error| AppError::new(error.to_string()))?;
 
         // Check whether or not the current position is opened.
-        if position_to_increase.wallet_balance * cur_market_price < SPOT_OPENED_POSITION_BIAS_VALUE
-        {
+        if position_to_increase.wallet_balance * cur_coin_price < SPOT_OPENED_POSITION_BIAS_VALUE {
             // Position is not opened, nothing to increase.
             return Err(AppError::new("Position to increase is not opened."));
         } // end if
@@ -608,8 +608,26 @@ impl ExchangeServiceSpot {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
-        // Validate the response from exchange.
-        ExchangeService::validate_exchange_response(&response)
+        // Get the response from exchange.
+        let res = ExchangeService::validate_exchange_response(&response);
+
+        // If there was an error, stop function execution.
+        if res.is_err() {
+            return Err(res.unwrap_err());
+        } // end if
+
+        // Adjust a stop loss order or set a new one.
+        Self::adjust_stop_loss(
+            Arc::new(StopLossAdjustment {
+                ticker: position_increase_order.ticker.to_owned(),
+                new_stop: position_increase_order.new_stop,
+            }),
+            cloned_user,
+        )
+        .await
+        .map_err(|error| AppError::new(error.to_string()))?;
+
+        Ok(())
     } // end fn increase_position
 
     /// This function closes a part of a position on spot.
@@ -618,6 +636,11 @@ impl ExchangeServiceSpot {
         position_closure: Arc<PositionClosure>,
         user: User,
     ) -> Result<(), AppError> {
+        // Check that position closure percentage is not greater than 100.
+        if position_closure.percentage_to_close > dec!(100) {
+            return Err(AppError::new("Percentage to close cannot exceed 100%"));
+        } // end if
+
         // Get a clone of the user to be able to adjust a stop loss.
         // let user_clone = user.clone();
 
@@ -659,6 +682,82 @@ impl ExchangeServiceSpot {
 
         // Adjust the quantity so to fit the quantity step restrictions.
         let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
+
+        // Decrease the amount of stop loss (stop loss orders allocate coins, so it is
+        // impossible to do anything with them).
+
+        // Get all the opened orders.
+        let opened_orders = Self::get_all_opened_orders(&client).await?;
+
+        // An order that it is required to adjust a stop loss of.
+        let mut cur_order: Option<OpenedOrder> = None;
+
+        // Get only one order (full stop loss of the required coin).
+        for opened_order in opened_orders {
+            // Check if current order is the order that is searched for.
+            if opened_order.ticker == position_closure.ticker
+                && opened_order.side == "Sell"
+                && opened_order.stop_order_type == "tpslOrder"
+                && opened_order.trigger_price < cur_coin_price
+            {
+                // This is the required order.
+                cur_order = Some(opened_order);
+                break;
+            } // end if
+        } // end for
+
+        // If the order was found, reduce the amount of it.
+        if cur_order.is_some() {
+            let cur_order = cur_order.unwrap();
+
+            // Check if it necessary to close the position entirely.
+            if position_closure.percentage_to_close == dec!(100) {
+                // Remove the order.
+                let response: serde_json::Value = client
+                    .post(
+                        "/v5/order/cancel",
+                        Some(json!({
+                            "category": "spot",
+                            "symbol": position_closure.ticker,
+                            "orderId": cur_order.order_id
+                        })),
+                        [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+                    )
+                    .await
+                    .map_err(|error| AppError::new(error.to_string()))?;
+
+                // Get the response from exchange.
+                let res = ExchangeService::validate_exchange_response(&response);
+
+                // If there was an error, stop function execution.
+                if res.is_err() {
+                    return Err(res.unwrap_err());
+                } // end if
+            } else {
+                // Amend the order.
+                let response: serde_json::Value = client
+                    .post(
+                        "/v5/order/amend",
+                        Some(json!({
+                            "category": "spot",
+                            "symbol": position_closure.ticker,
+                            "orderId": cur_order.order_id,
+                            "qty": cur_order.qty - qty
+                        })),
+                        [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+                    )
+                    .await
+                    .map_err(|error| AppError::new(error.to_string()))?;
+
+                // Get the response from exchange.
+                let res = ExchangeService::validate_exchange_response(&response);
+
+                // If there was an error, stop function execution.
+                if res.is_err() {
+                    return Err(res.unwrap_err());
+                } // end if
+            } // end if
+        } // end if
 
         // Send a request to adjust the position size on spot.
         let response: serde_json::Value = client
@@ -738,17 +837,25 @@ impl ExchangeServiceSpot {
             } // end if
         } // end for
 
+        // Get the quantity step for the instrument.
+        let quantity_step = &Self::get_quantity_step(&client, &stop_loss_adjustment.ticker)
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Adjust the quantity according to the quantity step.
+        let qty =
+            Decimal::floor(&(&opened_position.wallet_balance / quantity_step)) * quantity_step;
+
+        // If the order was not found, neither stop loss price was provided,
+        // then it is an error.
+        if cur_order.is_none() && stop_loss_adjustment.new_stop.is_none() {
+            return Err(AppError::new(
+                "Stop loss was not found, neither a new one was provided",
+            ));
+        } // end if
+
         // If the order was not found, set it up.
-        if cur_order.is_none() {
-            // Get the quantity step for the instrument.
-            let quantity_step = &Self::get_quantity_step(&client, &stop_loss_adjustment.ticker)
-                .await
-                .map_err(|error| AppError::new(error.to_string()))?;
-
-            // Adjust the quantity according to the quantity step.
-            let qty =
-                Decimal::floor(&(&opened_position.wallet_balance / quantity_step)) * quantity_step;
-
+        if cur_order.is_none() && stop_loss_adjustment.new_stop.is_some() {
             let response: serde_json::Value = client
                 .post(
                     "/v5/order/create",
@@ -758,7 +865,7 @@ impl ExchangeServiceSpot {
                         "orderType": "Market",
                         "side": "Sell",
                         "symbol": stop_loss_adjustment.ticker,
-                        "triggerPrice": stop_loss_adjustment.new_stop.to_string(),
+                        "triggerPrice": stop_loss_adjustment.new_stop.unwrap().to_string(),
                         "orderFilter": "tpslOrder",
                         "marketUnit": "baseCoin"
                     })),
@@ -773,16 +880,25 @@ impl ExchangeServiceSpot {
         // If the order already exists, safely unwrap the order.
         let cur_order = cur_order.unwrap();
 
+        let mut post_request = json!({
+            "category": "spot",
+            "symbol": stop_loss_adjustment.ticker,
+            "orderId": cur_order.order_id,
+            "qty": qty.to_string()
+        });
+
+        // Check if a new stop is provided.
+        if stop_loss_adjustment.new_stop.is_some() {
+            // Add it to the post request.
+            post_request["triggerPrice"] =
+                serde_json::Value::String(stop_loss_adjustment.new_stop.unwrap().to_string());
+        } // end if
+
         // Send a request to adjust a stop loss of the order on spot.
         let response: serde_json::Value = client
             .post(
                 "/v5/order/amend",
-                Some(json!({
-                    "category": "spot",
-                    "symbol": stop_loss_adjustment.ticker,
-                    "orderId": cur_order.order_id,
-                    "triggerPrice": stop_loss_adjustment.new_stop.to_string()
-                })),
+                Some(post_request),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
             .await

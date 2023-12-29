@@ -23,7 +23,7 @@ pub struct OpenedOrder {
     /// A ticker of the Coin
     pub ticker: String,
     /// Order quantity.
-    pub qty: String,
+    pub qty: Decimal,
     /// Position side (short/long)
     pub side: String,
     /// A trigger price at which the order is supposed to get executed.
