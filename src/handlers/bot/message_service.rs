@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use chatgpt::types::ChatMessage;
+use chatgpt::{converse::Conversation, types::ChatMessage};
 use chrono::Utc;
 use diesel::PgConnection;
 use teloxide::{
@@ -11,25 +11,22 @@ use teloxide::{
     types::{Message, User},
     Bot,
 };
+use tokio::sync::MutexGuard;
 
 use crate::{
     db_objects::channel_history::ChannelHistory,
     handlers::{
         bot::bot_service::BotService,
         exchange::{
-            exchange_service::ExchangeService, exchange_service_perpetual::ExchangeServicePerpetual,
+            exchange_service::ExchangeService,
+            exchange_service_perpetual::ExchangeServicePerpetual,
+            exchange_service_spot::ExchangeServiceSpot,
         },
     },
     utils::{app_error::AppError, database_service::DatabaseService},
 };
 
-use super::{
-    bot_service::BotState,
-    dto_perpetual::{
-        ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
-        StopLossAdjustment,
-    },
-};
+use super::{bot_service::BotState, dto_perpetual, dto_spot};
 
 /// This struct contains all the functionality to
 /// track and to handle incoming messages for a Telegram client.
@@ -44,11 +41,30 @@ impl MessageService {
         bot_state: BotState,
         bot: &Throttle<Bot>,
     ) -> Result<(), AppError> {
-        // Acquire the conversation.
-        let mut chatgpt_conversation = bot_state.chatgpt_conversation.lock().await;
+        // Acquire the conversations.
+        let chatgpt_conversation_perpetual = bot_state.chatgpt_conversation_perpetual.lock().await;
+        let chatgpt_conversation_spot = bot_state.chatgpt_conversation_spot.lock().await;
+
+        // Actual ChatGPT conversation.
+        let mut chatgpt_conversation: MutexGuard<'_, Conversation>;
 
         // Make a copy of message date.
         let message_date = message.date;
+
+        // Check if the time of the post is still appropriate for handling.
+        if Utc::now() - message_date > chrono::Duration::minutes(3) {
+            // Inform that the relevance of the message is low.
+            BotService::inform_client(
+                &bot,
+                bot_state.log_channel_id,
+                "The message is no longer relevant, skipping",
+            )
+            .await?;
+
+            // Skip handling of the message, as its relevance is
+            // very low.
+            return Ok(());
+        } // end if
 
         // Try to assemble a trade legend.
         let trade_legend = Self::assemble_trade_legend(message, bot_state.clone()).await;
@@ -67,7 +83,7 @@ impl MessageService {
         } // end if
 
         // Safely unwrap the legend.
-        let trade_legend = trade_legend.unwrap();
+        let (trade_legend, category) = trade_legend.unwrap();
 
         // Check if it is most likely to be a signal or not.
         if trade_legend.is_none() {
@@ -75,19 +91,16 @@ impl MessageService {
             return Ok(());
         } // end if
 
-        // Check if the time of the post is still appropriate for handling.
-        if Utc::now() - message_date > chrono::Duration::minutes(3) {
-            // Inform that the relevance of the message is low.
-            BotService::inform_client(
-                &bot,
-                bot_state.log_channel_id,
-                "The message is no longer relevant, skipping",
-            )
-            .await?;
-
-            // Skip handling of the message, as its relevance is
-            // very low.
-            return Ok(());
+        // Determine what ChatGPT model should be used.
+        if category == "perpetual" {
+            chatgpt_conversation = chatgpt_conversation_perpetual;
+        } else if category == "spot" {
+            chatgpt_conversation = chatgpt_conversation_spot;
+        } else {
+            // There is no any other category.
+            return Err(AppError::new(
+                "Wrong category. Must be either \"perpetual\" or \"spot\"",
+            ));
         } // end if
 
         // Safely unwrap the legend.
@@ -101,9 +114,21 @@ impl MessageService {
 
         let chatgpt_message = response_chatgpt.message().content.clone();
 
-        // Try to parse the the response from ChatGPT and
+        // Check whether it is a spot or perpetual signal, then
+        // try to parse the the response from ChatGPT and
         // react to it appropriately.
-        Self::react_to_signal(chatgpt_message, bot, bot_state.clone()).await?;
+        if category == "perpetual" {
+            // A signal on perpetual swaps.
+            Self::react_to_signal_perpetual(chatgpt_message, bot, bot_state.clone()).await?;
+        } else if category == "spot" {
+            // A signal on spot.
+            Self::react_to_signal_spot(chatgpt_message, bot, bot_state.clone()).await?;
+        } else {
+            // There is no any other category.
+            return Err(AppError::new(
+                "Wrong category. Must be either \"perpetual\" or \"spot\"",
+            ));
+        } // end if
 
         // Remove a message from the history in order not to waste tokens.
         chatgpt_conversation.history.truncate(1);
@@ -119,7 +144,7 @@ impl MessageService {
         BotService::inform_client(
             &bot,
             bot_state.log_channel_id,
-            "<b>A potential signal!</b>💰",
+            format!("<b>A potential {} signal!</b>💰", category),
         )
         .await?;
 
@@ -148,7 +173,7 @@ impl MessageService {
     async fn assemble_trade_legend(
         message: Message,
         bot_state: BotState,
-    ) -> Result<Option<String>, AppError> {
+    ) -> Result<(Option<String>, String), AppError> {
         // Initialize an array that will be storing a trade legend.
         let mut trade_legend: Vec<String> = Vec::new();
 
@@ -156,13 +181,13 @@ impl MessageService {
         if message.text().is_none() {
             // There is no need to process the message,
             // if it does not contain any text data.
-            return Ok(None);
+            return Ok((None, "".to_string()));
         } // end if
 
         // Check if the message is less than 4 symbols, then do not react.
         if message.text().unwrap().chars().count() < 4 {
             // Do not react to the message.
-            return Ok(None);
+            return Ok((None, "".to_string()));
         } // end if
 
         // Get a connection to the database.
@@ -193,21 +218,43 @@ impl MessageService {
 
         // println!("Legend:\n{:#?}", &trade_legend);
 
-        // Check if the last inserted message is a signal.
-        if Self::is_signal(trade_legend.last().unwrap()) {
+        // Get the first message of the trade legend.
+        let first_message = trade_legend.last().unwrap();
+
+        // Check if the last inserted message is a signal on perpetual swaps.
+        if Self::is_perpetual_signal(first_message) {
             // Convert the legend to string.
             let trade_legend = Self::convert_legend_to_string(trade_legend);
             // It is most likely to be a signal.
-            return Ok(Some(trade_legend));
+            return Ok((Some(trade_legend), "linear".to_string()));
         } // end if
 
-        Ok(None)
+        // Check if the last inserted message is a signal on spot.
+        if Self::is_spot_signal(first_message) {
+            // Convert the legend to string.
+            let trade_legend = Self::convert_legend_to_string(trade_legend);
+            // It is most likely to be a signal.
+            return Ok((Some(trade_legend), "spot".to_string()));
+        } // end if
+
+        Ok((None, "".to_string()))
     } // end fn assemble_trade_snippet
 
-    /// This function checks if a message is a signal or not
+    /// This function checks if a message is a signal on spot or not.
     /// (The role of the function is to eliminate the waste of tokens
     /// on ChatGPT)
-    fn is_signal(message: &String) -> bool {
+    fn is_spot_signal(message: &String) -> bool {
+        if message.contains("спот") || message.contains("spot") {
+            return true;
+        } // end if
+
+        false
+    } // end fn is_spot_signal
+
+    /// This function checks if a message is a signal on perpetual swaps or not
+    /// (The role of the function is to eliminate the waste of tokens
+    /// on ChatGPT)
+    fn is_perpetual_signal(message: &String) -> bool {
         // Declare variables that the final decision will be based on.
         let mut has_bybit = false;
         let mut has_usdt = false;
@@ -365,14 +412,16 @@ impl MessageService {
 
     /// This function parses the response from ChatGPT and reacts to
     /// it opening, closing or increasing positions on perpetual swaps in USDT.
-    pub async fn react_to_signal(
+    pub async fn react_to_signal_perpetual(
         signal: String,
         bot: &Throttle<Bot>,
         bot_state: BotState,
     ) -> Result<(), AppError> {
         // Try to parse the the response from ChatGPT and
         // react to it appropriately.
-        if let Ok(position_opening) = serde_json::from_str::<PositionOpening>(&signal) {
+        if let Ok(position_opening) =
+            serde_json::from_str::<dto_perpetual::PositionOpening>(&signal)
+        {
             // This is a position opening signal.
             // Open a new position.
             Self::send_exchange_order_execution_feedback(
@@ -386,7 +435,9 @@ impl MessageService {
                 &bot_state,
             )
             .await;
-        } else if let Ok(position_increase) = serde_json::from_str::<PositionIncrease>(&signal) {
+        } else if let Ok(position_increase) =
+            serde_json::from_str::<dto_perpetual::PositionIncrease>(&signal)
+        {
             // This is a position increase, pyramiding.
             // Increase the position size.
             Self::send_exchange_order_execution_feedback(
@@ -400,7 +451,9 @@ impl MessageService {
                 &bot_state,
             )
             .await;
-        } else if let Ok(order_removal) = serde_json::from_str::<ConditionalOrderRemoval>(&signal) {
+        } else if let Ok(order_removal) =
+            serde_json::from_str::<dto_perpetual::ConditionalOrderRemoval>(&signal)
+        {
             // This is a removal of an opened order.
             // Remove the opened order on perpetual swaps.
             Self::send_exchange_order_execution_feedback(
@@ -414,7 +467,9 @@ impl MessageService {
                 &bot_state,
             )
             .await;
-        } else if let Ok(position_closure) = serde_json::from_str::<PositionClosure>(&signal) {
+        } else if let Ok(position_closure) =
+            serde_json::from_str::<dto_perpetual::PositionClosure>(&signal)
+        {
             // This is a position closure signal.
             // Close a part of the position.
             Self::send_exchange_order_execution_feedback(
@@ -428,7 +483,8 @@ impl MessageService {
                 &bot_state,
             )
             .await;
-        } else if let Ok(stop_loss_adjustment) = serde_json::from_str::<StopLossAdjustment>(&signal)
+        } else if let Ok(stop_loss_adjustment) =
+            serde_json::from_str::<dto_perpetual::StopLossAdjustment>(&signal)
         {
             // This is a stop loss adjustment signal.
             // Adjust stop loss of a position.
@@ -449,7 +505,102 @@ impl MessageService {
         } // end if
 
         Ok(())
-    } // end react_to_signal
+    } // end react_to_signal_perpetual
+
+    /// This function parses the response from ChatGPT and reacts to
+    /// it opening, closing or increasing positions on spot.
+    pub async fn react_to_signal_spot(
+        signal: String,
+        bot: &Throttle<Bot>,
+        bot_state: BotState,
+    ) -> Result<(), AppError> {
+        // Try to parse the the response from ChatGPT and
+        // react to it appropriately.
+        if let Ok(position_opening) = serde_json::from_str::<dto_spot::PositionOpening>(&signal) {
+            // This is a position opening signal.
+            // Open a new position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(position_opening),
+                    ExchangeServiceSpot::open_position,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(position_increase) =
+            serde_json::from_str::<dto_spot::PositionIncrease>(&signal)
+        {
+            // This is a position increase, pyramiding.
+            // Increase the position size.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(position_increase),
+                    ExchangeServiceSpot::increase_position,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(order_removal) =
+            serde_json::from_str::<dto_spot::ConditionalOrderRemoval>(&signal)
+        {
+            // This is a removal of an opened order.
+            // Remove the opened order on spot.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(order_removal),
+                    ExchangeServiceSpot::cancel_order,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(position_closure) =
+            serde_json::from_str::<dto_spot::PositionClosure>(&signal)
+        {
+            // This is a position closure signal.
+            // Close a part of the position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(position_closure),
+                    ExchangeServiceSpot::close_part_of_position,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(stop_loss_adjustment) =
+            serde_json::from_str::<dto_spot::StopLossAdjustment>(&signal)
+        {
+            // This is a stop loss adjustment signal.
+            // Adjust stop loss of a position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(stop_loss_adjustment),
+                    ExchangeServiceSpot::adjust_stop_loss,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else {
+            // There is nothing to do.
+            // Skip the signal.
+        } // end if
+
+        Ok(())
+    } // end react_to_signal_spot
 
     /// This function sends information about successes and failures after executing
     /// an order on the exchange for multiple users.

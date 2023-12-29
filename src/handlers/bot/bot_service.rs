@@ -41,8 +41,10 @@ use super::message_service::MessageService;
 pub struct BotState {
     /// Database connection pool.
     pub pg_connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
-    /// ChatGPT conversation.
-    pub chatgpt_conversation: Arc<Mutex<Conversation>>,
+    /// ChatGPT conversation for perpetual swaps trading.
+    pub chatgpt_conversation_perpetual: Arc<Mutex<Conversation>>,
+    /// ChatGPT conversation for stop trading.
+    pub chatgpt_conversation_spot: Arc<Mutex<Conversation>>,
     /// This is a trusted channel ID that the bot
     /// gets trading signals from.
     pub trusted_channel_id: i64,

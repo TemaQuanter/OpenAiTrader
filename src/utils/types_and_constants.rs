@@ -5,8 +5,11 @@ use rust_decimal_macros::dec;
 // Currently out of use.
 pub const _CHAT_GPT_HISTORY_LENGTH: usize = 200;
 
-// The location of a file with seed prompt for ChatGPT
-pub const CHAT_GPT_SEED_PROMPT_FILE: &str = "data/chatgpt_seed_prompt.txt";
+// The location of a file with seed prompt for ChatGPT that is responsible for perpetual swaps.
+pub const CHAT_GPT_SEED_PROMPT_PERPETUAL_FILE: &str = "data/chatgpt_seed_prompt_perpetual.txt";
+
+// The location of a file with seed prompt for ChatGPT that is responsible for spot.
+pub const CHAT_GPT_SEED_PROMPT_SPOT_FILE: &str = "data/chatgpt_seed_prompt_spot.txt";
 
 // Error message for telegram users.
 pub const ERROR_MESSAGE: &str = "Something went wrong with me, please, try again later";

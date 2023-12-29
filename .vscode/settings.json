@@ -23,7 +23,8 @@
     "repls",
     "teloxide",
     "tiktoken",
-    "tpsl"
+    "tpsl",
+    "спот"
   ],
   "[python]": {
     "editor.defaultFormatter": "ms-python.autopep8"

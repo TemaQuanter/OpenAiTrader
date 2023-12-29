@@ -8,7 +8,7 @@ use chatgpt::{
     types::ChatMessage,
 };
 
-use super::{app_error::AppError, types_and_constants::CHAT_GPT_SEED_PROMPT_FILE};
+use super::app_error::AppError;
 
 /// This structure contains all the functionality to work
 /// with ChatGPT.
@@ -18,10 +18,13 @@ pub struct ChatGPTService;
 /// working with ChatGPT.
 impl ChatGPTService {
     /// This function creates a new conversation with ChatGPT.
-    pub async fn get_conversation(chatgpt_client: &ChatGPT) -> Result<Conversation, AppError> {
+    pub async fn get_conversation(
+        chatgpt_client: &ChatGPT,
+        seed_prompt_file: &str,
+    ) -> Result<Conversation, AppError> {
         // Load a file with a seed prompt.
-        let mut prompt_file = fs::File::open(CHAT_GPT_SEED_PROMPT_FILE)
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let mut prompt_file =
+            fs::File::open(seed_prompt_file).map_err(|error| AppError::new(error.to_string()))?;
 
         // Load a starting prompt from a file.
         let mut seed_prompt = String::new();

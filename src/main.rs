@@ -20,7 +20,10 @@ use crate::handlers::bot::bot_service::{BotService, BotState};
 use crate::handlers::bot::message_service::MessageService;
 use crate::handlers::server::run::run_server;
 use crate::utils::database_service::DatabaseService;
-use crate::utils::lazy_static::CHAT_GPT_MODEL;
+use crate::utils::lazy_static::{CHAT_GPT_MODEL_PERPETUAL, CHAT_GPT_MODEL_SPOT};
+use crate::utils::types_and_constants::{
+    CHAT_GPT_SEED_PROMPT_PERPETUAL_FILE, CHAT_GPT_SEED_PROMPT_SPOT_FILE,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -67,13 +70,25 @@ async fn main() -> Result<(), AppError> {
     // Initialize a telegram bot.
     let bot = Bot::new(&tg_bot_api).throttle(Limits::default());
 
-    // Initialize ChatGPT client.
-    let chatgpt_client = ChatGPT::new_with_config(
-        chat_gpt_api,
+    // Initialize ChatGPT client for perpetual swaps.
+    let chatgpt_client_perpetual = ChatGPT::new_with_config(
+        &chat_gpt_api,
         ModelConfigurationBuilder::default()
             .api_url(Url::from_str(&chat_gpt_url).unwrap())
             .temperature(0.0)
-            .engine(ChatGPTEngine::Custom(*CHAT_GPT_MODEL))
+            .engine(ChatGPTEngine::Custom(*CHAT_GPT_MODEL_PERPETUAL))
+            .build()
+            .unwrap(),
+    )
+    .unwrap();
+
+    // Initialize ChatGPT client for spot.
+    let chatgpt_client_spot = ChatGPT::new_with_config(
+        &chat_gpt_api,
+        ModelConfigurationBuilder::default()
+            .api_url(Url::from_str(&chat_gpt_url).unwrap())
+            .temperature(0.0)
+            .engine(ChatGPTEngine::Custom(*CHAT_GPT_MODEL_SPOT))
             .build()
             .unwrap(),
     )
@@ -81,15 +96,25 @@ async fn main() -> Result<(), AppError> {
 
     log::info!("Got ChatGPT client");
 
-    // Initialize or load a conversation with ChatGPT.
-    let chatgpt_conversation = ChatGPTService::get_conversation(&chatgpt_client)
-        .await
-        .unwrap();
+    // Initialize or load a conversation with ChatGPT that is responsible for perpetual swaps.
+    let chatgpt_conversation_perpetual = ChatGPTService::get_conversation(
+        &chatgpt_client_perpetual,
+        CHAT_GPT_SEED_PROMPT_PERPETUAL_FILE,
+    )
+    .await
+    .unwrap();
+
+    // Initialize or load a conversation with ChatGPT that is responsible for spot.
+    let chatgpt_conversation_spot =
+        ChatGPTService::get_conversation(&chatgpt_client_spot, CHAT_GPT_SEED_PROMPT_SPOT_FILE)
+            .await
+            .unwrap();
 
     // Assemble a bot state.
     let bot_state = BotState {
         pg_connection_pool: Arc::new(pg_connection_pool),
-        chatgpt_conversation: Arc::new(Mutex::new(chatgpt_conversation)),
+        chatgpt_conversation_perpetual: Arc::new(Mutex::new(chatgpt_conversation_perpetual)),
+        chatgpt_conversation_spot: Arc::new(Mutex::new(chatgpt_conversation_spot)),
         trusted_channel_id,
         log_channel_id,
     };
