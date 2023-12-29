@@ -35,7 +35,7 @@ pub struct ExchangeServiceSpot;
 impl ExchangeServiceSpot {
     /// This function returns all the current opened
     /// spot positions on UTA.
-    pub async fn get_all_opened_positions(
+    pub async fn _get_all_opened_positions(
         client: &Client,
     ) -> Result<Vec<OpenedPosition>, AppError> {
         // Send a request and get the information about opened positions.
@@ -217,7 +217,7 @@ impl ExchangeServiceSpot {
 
     /// This function retrieves the price step for a particular instrument
     /// on spot in USDT.
-    pub async fn _get_price_step(
+    pub async fn get_price_step(
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
@@ -504,7 +504,7 @@ impl ExchangeServiceSpot {
             (take_profit_upper_bound - take_profit_lower_bound).abs() / number_take_profits;
 
         // Get the minimum quote step.
-        let quote_step = Self::_get_price_step(&client, &position_opening.ticker)
+        let quote_step = Self::get_price_step(&client, &position_opening.ticker)
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 

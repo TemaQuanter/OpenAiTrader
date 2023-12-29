@@ -226,7 +226,7 @@ impl MessageService {
             // Convert the legend to string.
             let trade_legend = Self::convert_legend_to_string(trade_legend);
             // It is most likely to be a signal.
-            return Ok((Some(trade_legend), "linear".to_string()));
+            return Ok((Some(trade_legend), "perpetual".to_string()));
         } // end if
 
         // Check if the last inserted message is a signal on spot.
