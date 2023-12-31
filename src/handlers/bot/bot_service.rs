@@ -11,6 +11,8 @@ use diesel::{
 };
 use rust_decimal::Decimal;
 
+use crate::utils::types_and_constants::PATH_TO_BOT_MANUAL;
+use serde::{Deserialize, Serialize};
 use teloxide::{
     adaptors::Throttle,
     dispatching::{HandlerExt, UpdateFilterExt},
@@ -96,6 +98,8 @@ enum AdminCommands {
     GetApprovedUsers,
     #[command(description = "get rejected users")]
     GetRejectedUsers,
+    #[command(description = "get expired users")]
+    GetExpiredUsers,
     #[command(description = "get admins")]
     GetAdmins,
     #[command(description = "make admin (assign an admin role to the user)")]
@@ -108,6 +112,8 @@ enum AdminCommands {
     Reject(i64),
     #[command(description = "ban a user")]
     Ban(i64),
+    #[command(description = "make user subscription expired")]
+    Expire(i64),
 } // end enum AdminCommand
 
 // These are all commands that the bot can handle for superuser.
@@ -122,6 +128,29 @@ enum SuperuserCommands {
     #[command(description = "get superusers")]
     GetSuperusers,
 } // end enum SuperuserCommands
+
+/// Data structure to parse command example.
+#[derive(Serialize, Deserialize, Debug)]
+struct CommandExample {
+    command: String,
+    response: String,
+} // end struct CommandExample
+
+/// Data structure to parse command description.
+#[derive(Serialize, Deserialize, Debug)]
+struct Command {
+    command: String,
+    description: String,
+    example: CommandExample,
+} // end struct Command
+
+/// Data structure to parse JSON user manual to the bot.
+#[derive(Serialize, Deserialize, Debug)]
+struct Commands {
+    user: Vec<Command>,
+    admin: Vec<Command>,
+    superuser: Vec<Command>,
+} // end struct Commands
 
 /// This structure contains all the functionality
 /// necessary to drive a Telegram bot.
@@ -343,24 +372,25 @@ impl BotService {
                 }; // end match
 
                 // Assemble command documentation according to user role.
-                let mut reply = UserCommands::descriptions().to_string();
+                let manual = Self::assemble_user_manual(RoleId::from(registered_user.role_id));
 
-                // If the user has Admin or Superuser role, then add more commands.
-                if vec![RoleId::Admin, RoleId::Superuser]
-                    .contains(&RoleId::from(registered_user.role_id))
-                {
-                    // Add admin commands as well.
-                    reply += &format!("\n\n{}", AdminCommands::descriptions().to_string());
+                // If there was an error, inform a user about it.
+                if manual.is_err() {
+                    log::error!("{}", manual.unwrap_err());
+
+                    // Send the help instructions to the user.
+                    bot.send_message(msg.chat.id, ERROR_MESSAGE)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
+
+                    return Ok(());
                 } // end if
 
-                // If the user has Superuser role, then add more commands.
-                if vec![RoleId::Superuser].contains(&RoleId::from(registered_user.role_id)) {
-                    // Add superuser commands as well.
-                    reply += &format!("\n\n{}", SuperuserCommands::descriptions().to_string());
-                } // end if
+                // Safely unwrap the manual.
+                let manual = manual.unwrap();
 
                 // Send the help instructions to the user.
-                bot.send_message(msg.chat.id, reply)
+                bot.send_message(msg.chat.id, manual)
                     .parse_mode(ParseMode::Html)
                     .await?
             } // end UserCommands::Help
@@ -880,6 +910,16 @@ impl BotService {
                 )
                 .await?;
             } // end AdminCommands::GetRejectedUsers
+            AdminCommands::GetExpiredUsers => {
+                Self::display_users_by_status(
+                    &bot,
+                    &msg,
+                    StatusId::Expired,
+                    RoleId::from(registered_user.role_id),
+                    conn,
+                )
+                .await?;
+            } // end AdminCommands::GetExpiredUsers
             AdminCommands::GetAdmins => {
                 Self::display_users_by_role(&bot, &msg, RoleId::Admin, conn).await?
             } // end AdminCommands::GetAdmins
@@ -1278,6 +1318,87 @@ impl BotService {
                 bot.send_message(
                     ChatId(edited_user.telegram_id),
                     "I'm sorry to inform you that you were <b>banned</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
+            }
+            AdminCommands::Expire(user_id) => {
+                // If the user is trying to modify themselves, then reject the request.
+                if !Self::protect_from_self_modification(
+                    &bot,
+                    &msg,
+                    registered_user.telegram_id,
+                    user_id,
+                )
+                .await?
+                {
+                    // The user cannot modify themselves.
+                    return Ok(());
+                } // end if
+
+                // Get the user from the database whose subscription to make expired.
+                let mut edited_user = match User::get_from_db_by_id(user_id, conn) {
+                    Ok(edited_user) => edited_user,
+                    Err(error) => {
+                        log::error!("{}", error);
+
+                        // Inform the user that an error occurred.
+                        bot.send_message(msg.chat.id, ERROR_MESSAGE).await?;
+
+                        return Ok(());
+                    } // end Err
+                }; // end match
+
+                // Check that the user subscription is not expired yet.
+                if edited_user.status_id == (StatusId::Expired as i32) {
+                    // Inform the message sender that the user subscription has already
+                    // expired.
+                    bot.send_message(msg.chat.id, "The user subscription has already expired")
+                        .await?;
+
+                    return Ok(());
+                } // end if
+
+                // If the role of the current user is lower than the role of the edited user,
+                // than reject the operation.
+                if !Self::is_higher_or_same_role(
+                    &RoleId::from(registered_user.role_id),
+                    &RoleId::from(edited_user.role_id),
+                ) {
+                    // Inform a user that the user is higher than them.
+                    bot.send_message(
+                        msg.chat.id,
+                        "This user is higher in rank than you, you cannot edit them",
+                    )
+                    .await?;
+
+                    return Ok(());
+                } // end if
+
+                // Ban the user.
+                edited_user.status_id = StatusId::Expired as i32;
+
+                // Save changes into the database.
+                match User::update(&edited_user, conn) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        log::error!("{}", error);
+
+                        // Inform a user that an error occurred.
+                        bot.send_message(msg.chat.id, ERROR_MESSAGE).await?;
+
+                        return Ok(());
+                    } // end Err
+                } // end match
+
+                // Inform about success.
+                bot.send_message(msg.chat.id, "Success!").await?;
+
+                // Inform an affected user about the changes.
+                bot.send_message(
+                    ChatId(edited_user.telegram_id),
+                    "I'm sorry to inform you that your subscription was made <b>expired</b>.\n\n\
+                    From now on I will not trade for you anymore, until you renew your subscription.",
                 )
                 .parse_mode(ParseMode::Html)
                 .await?;
@@ -1758,6 +1879,52 @@ impl BotService {
 
         Ok(())
     } // end display_users_by_status
+
+    /// This function assembles and returns a user manual on
+    /// how to use the bot, taking into account the user role in the system.
+    fn assemble_user_manual(role_id: RoleId) -> Result<String, std::io::Error> {
+        // Load the raw data from a manual JSON file.
+        let raw_manual = std::fs::read_to_string(PATH_TO_BOT_MANUAL)?;
+
+        // Deserialize the JSON data
+        let commands: Commands = serde_json::from_str(&raw_manual)?;
+
+        // A returned manual.
+        let mut manual = String::from("<b>These commands are supported:</b>\n\n");
+
+        // Assemble commands for a regular user.
+        for command in commands.user {
+            manual += &Self::get_command_description(command);
+        } // end for
+
+        // If user's rank is higher or equal to admin, then add some more
+        // instructions.
+        if role_id == RoleId::Admin || role_id == RoleId::Superuser {
+            manual += "<b>These commands are supported for admins:</b>\n\n";
+
+            // Assemble commands for a admin user.
+            for command in commands.admin {
+                manual += &Self::get_command_description(command);
+            } // end for
+        } // end if
+
+        // If user's rank is higher or equal to superuser, then add some more
+        // instructions.
+        if role_id == RoleId::Admin || role_id == RoleId::Superuser {
+            manual += "<b>These commands are supported for superusers:</b>\n\n";
+
+            // Assemble commands for a superuser user.
+            for command in commands.superuser {
+                manual += &Self::get_command_description(command);
+            } // end for
+        } // end if
+
+        Ok(manual)
+    } // end fn assemble_user_manual
+
+    fn get_command_description(command: Command) -> String {
+        format!("🖥 Command: <code>{}</code>\n📜 Description: <em>{}</em>\n\n🧿 Example:\n\n👤 You: <code>{}</code>\n🤖 Bot: {}\n\n\n\n", command.command, command.description, command.example.command, command.example.response)
+    } // end fn get_command_description
 
     /// This function displays a list of users by role in a formatted way.
     async fn display_users_by_role(

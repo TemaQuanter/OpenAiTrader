@@ -10,7 +10,7 @@ pub struct PositionOpening {
     /// A ticker of the asset.
     pub ticker: String,
     /// The percentage of deposit to get into a trade for.
-    pub percent_from_deposit: Decimal,
+    pub percentage_from_deposit: Decimal,
     /// Order type.
     pub order_type: String,
     /// Lower bound entrance point.

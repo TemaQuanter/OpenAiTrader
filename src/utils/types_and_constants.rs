@@ -22,3 +22,6 @@ pub const SPOT_OPENED_POSITION_BIAS_VALUE: Decimal = dec!(1.0);
 
 // Server address and port.
 pub const SERVER_ADDRESS: &str = "0.0.0.0:8080";
+
+// Path to the bot manual.
+pub const PATH_TO_BOT_MANUAL: &str = "data/commands_description.json";

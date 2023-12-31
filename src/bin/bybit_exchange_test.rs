@@ -65,7 +65,7 @@ async fn main() {
 
     let position_opening = dto_spot::PositionOpening {
         ticker: "UNIUSDT".to_string(),
-        percent_from_deposit: dec!(5),
+        percentage_from_deposit: dec!(5),
         order_type: "market".to_string(),
         lower_bound_entry: dec!(7),
         upper_bound_entry: dec!(8),

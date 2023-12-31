@@ -400,7 +400,7 @@ impl ExchangeServiceSpot {
 
         // Calculate the value of coins to buy/sell in USDT.
         let coins_value =
-            user.deposit.unwrap() * (position_opening.percent_from_deposit / dec!(100));
+            user.deposit.unwrap() * (position_opening.percentage_from_deposit / dec!(100));
 
         // Calculate the quantity of coins to buy/sell.
         let qty = coins_value / cur_coin_price;
@@ -847,11 +847,9 @@ impl ExchangeServiceSpot {
             Decimal::floor(&(&opened_position.wallet_balance / quantity_step)) * quantity_step;
 
         // If the order was not found, neither stop loss price was provided,
-        // then it is an error.
+        // then just finish function execution.
         if cur_order.is_none() && stop_loss_adjustment.new_stop.is_none() {
-            return Err(AppError::new(
-                "Stop loss was not found, neither a new one was provided",
-            ));
+            return Ok(());
         } // end if
 
         // If the order was not found, set it up.
@@ -972,8 +970,8 @@ impl ExchangeServiceSpot {
     /// False - otherwise.
     pub async fn verify_position(position_opening: &PositionOpening) -> Result<(), AppError> {
         // Make sure the percentage from deposit is not greater than 5%.
-        if position_opening.percent_from_deposit > dec!(5.0)
-            || position_opening.percent_from_deposit < dec!(0.0)
+        if position_opening.percentage_from_deposit > dec!(5.0)
+            || position_opening.percentage_from_deposit < dec!(0.0)
         {
             // It is not safe to get into such a position.
             return Err(AppError::new(

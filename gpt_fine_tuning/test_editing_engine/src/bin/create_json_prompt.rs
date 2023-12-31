@@ -27,7 +27,7 @@ fn main() {
     let mut new_examples: Vec<String> = Vec::new();
 
     // Get a file with an updated system prompt.
-    let system_prompt = fs::read_to_string("../../data/chatgpt_seed_prompt.txt").unwrap();
+    let system_prompt = fs::read_to_string("../../data/chatgpt_seed_prompt_perpetual.txt").unwrap();
 
     // Open a file with a dataset.
     let dataset_file = fs::File::open("../datasets/dataset.jsonl").unwrap();
