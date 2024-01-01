@@ -488,6 +488,15 @@ impl ExchangeServiceSpot {
 
         // Check if both boundaries are equal, then there is no need to set partial orders.
         if take_profit_lower_bound == take_profit_upper_bound {
+            // Set one take profit on the entire position.
+            // Self::place_partial_take_profit_order(
+            //     &client,
+            //     &position_opening.ticker,
+            //     take_profit_lower_bound.to_string(),
+            //     qty.to_string(),
+            // )
+            // .await?;
+
             return ExchangeService::validate_exchange_response(&response);
         } // end if
 
@@ -519,13 +528,13 @@ impl ExchangeServiceSpot {
         // Setup a grid of smaller take profits on the way to the main goal.
         for _ in 0..number_take_profits.to_string().parse::<f64>().unwrap() as i32 {
             // Set a new conditional order with take profit.
-            Self::place_partial_take_profit_order(
-                &client,
-                &position_opening.ticker,
-                cur_price.to_string(),
-                partial_qty.to_string(),
-            )
-            .await?;
+            // Self::place_partial_take_profit_order(
+            //     &client,
+            //     &position_opening.ticker,
+            //     cur_price.to_string(),
+            //     partial_qty.to_string(),
+            // )
+            // .await?;
 
             // Get a new price for the next take profit.
             cur_price += price_step;
