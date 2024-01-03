@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import base64
 
 # Path to the dataset to train the model on.
-DATASET_PATH = "datasets/spot/dataset_v2.jsonl"
+DATASET_PATH = "datasets/dataset_spot_improvement.jsonl"
 
 # Import environmental variables from .env file into the module.
 load_dotenv()
@@ -33,7 +33,7 @@ training_file = file_upload_response.id
 
 # Create a fine-tuning job.
 fine_tuning_job_response = client.fine_tuning.jobs.create(
-    training_file=training_file, model="gpt-3.5-turbo-1106")
+    training_file=training_file, model="ft:gpt-3.5-turbo-1106:artem-mikheev::8c7SQkTQ")
 
 # Display information about fine-tuning job.
 print(fine_tuning_job_response)

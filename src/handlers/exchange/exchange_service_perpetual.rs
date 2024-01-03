@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crypto_botters::{
-    bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
+    bybit::{BybitHttpAuth, BybitOption},
     Client,
 };
 use serde_json::json;
@@ -185,7 +185,7 @@ impl ExchangeServicePerpetual {
     pub async fn get_instrument_price(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> Result<Decimal, BybitRequestError> {
+    ) -> Result<Decimal, AppError> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -193,7 +193,11 @@ impl ExchangeServicePerpetual {
                 Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)?;
 
         // Get the current market price.
         let market_price = Decimal::from_str_exact(
@@ -222,6 +226,9 @@ impl ExchangeServicePerpetual {
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
 
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)?;
+
         // Get the quantity step for the instrument.
         let price_step = Decimal::from_str_exact(
             &response["result"]["list"][0]["priceFilter"]["tickSize"]
@@ -248,6 +255,9 @@ impl ExchangeServicePerpetual {
             )
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)?;
 
         // Get the quantity step for the instrument.
         let quantity_step = Decimal::from_str_exact(

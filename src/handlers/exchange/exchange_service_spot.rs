@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use crypto_botters::{
-    bybit::{BybitHttpAuth, BybitOption, BybitRequestError},
+    bybit::{BybitHttpAuth, BybitOption},
     Client,
 };
 use serde_json::json;
@@ -93,10 +93,21 @@ impl ExchangeServiceSpot {
         // Parse the data into a DTO.
 
         // Convert the response into an array of opened positions.
-        let opened_position_raw = &response["result"]["balance"].as_array().unwrap()[0];
+        let opened_positions_raw = response["result"]["balance"].as_array().unwrap();
 
-        // Parse an opened position into a struct.
-        let opened_position = Self::parse_opened_position(opened_position_raw);
+        // Get the opened position.
+        let opened_position = if opened_positions_raw.is_empty() {
+            // The position is not opened.
+            // Assign a default value.
+            OpenedPosition {
+                coin: coin.as_ref().to_string(),
+                transfer_balance: dec!(0),
+                wallet_balance: dec!(0),
+            } // end OpenedPosition
+        } else {
+            // Parse an opened position into a struct.
+            Self::parse_opened_position(&opened_positions_raw[0])
+        }; // end if
 
         Ok(opened_position)
     } // end fn get_opened_position
@@ -194,7 +205,7 @@ impl ExchangeServiceSpot {
     pub async fn get_instrument_ask_price(
         client: &Client,
         ticker: impl AsRef<str>,
-    ) -> Result<Decimal, BybitRequestError> {
+    ) -> Result<Decimal, AppError> {
         // Send a request and get the information about an instrument.
         let response: serde_json::Value = client
             .get(
@@ -202,7 +213,11 @@ impl ExchangeServiceSpot {
                 Some(&[("category", "spot"), ("symbol", ticker.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
-            .await?;
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate exchange response.
+        ExchangeService::validate_exchange_response(&response)?;
 
         // Get the current market price.
         let market_price = Decimal::from_str_exact(
@@ -225,11 +240,14 @@ impl ExchangeServiceSpot {
         let response: serde_json::Value = client
             .get(
                 "/v5/market/instruments-info",
-                Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
+                Some(&[("category", "spot"), ("symbol", ticker.as_ref())]),
                 [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
             )
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)?;
 
         // Get the quantity step for the instrument.
         let price_step = Decimal::from_str_exact(
@@ -257,6 +275,9 @@ impl ExchangeServiceSpot {
             )
             .await
             .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate the response from exchange.
+        ExchangeService::validate_exchange_response(&response)?;
 
         // Get the quantity step for the instrument.
         let quantity_step = Decimal::from_str_exact(
@@ -505,7 +526,7 @@ impl ExchangeServiceSpot {
         let number_take_profits = dec!(4.0);
 
         // Calculate the quantity to close on each partial take profit.
-        let partial_qty =
+        let _partial_qty =
             Decimal::floor(&((qty / number_take_profits) / quantity_step)) * quantity_step;
 
         // Calculate the price step to close the orders.
@@ -993,7 +1014,7 @@ impl ExchangeServiceSpot {
     } // end fn verify_position
 
     /// This function places a partial take profit order.
-    pub async fn place_partial_take_profit_order(
+    pub async fn _place_partial_take_profit_order(
         client: &Client,
         ticker: &String,
         trigger_price: String,

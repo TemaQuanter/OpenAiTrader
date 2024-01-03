@@ -64,14 +64,14 @@ async fn main() {
     // );
 
     let position_opening = dto_spot::PositionOpening {
-        ticker: "UNIUSDT".to_string(),
-        percentage_from_deposit: dec!(5),
+        ticker: "SEILORUSDT".to_string(),
+        percentage_from_deposit: dec!(2),
         order_type: "market".to_string(),
-        lower_bound_entry: dec!(7),
-        upper_bound_entry: dec!(8),
-        stop_loss: Some(dec!(7)),
-        take_profit_lower_bound: None,
-        take_profit_upper_bound: None,
+        lower_bound_entry: dec!(0.09),
+        upper_bound_entry: dec!(0.15),
+        stop_loss: None,
+        take_profit_lower_bound: Some(dec!(0.27)),
+        take_profit_upper_bound: Some(dec!(0.75)),
     };
 
     let position_closure = dto_spot::PositionClosure {
@@ -95,9 +95,9 @@ async fn main() {
         trigger_price: dec!(7),
     };
 
-    // ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
-    //     .await
-    //     .unwrap();
+    ExchangeServiceSpot::open_position(Arc::new(position_opening), test_user)
+        .await
+        .unwrap();
 
     // ExchangeServiceSpot::adjust_stop_loss(Arc::new(stop_loss_adjustment), test_user)
     //     .await
@@ -111,9 +111,9 @@ async fn main() {
     //     .await
     //     .unwrap();
 
-    ExchangeServiceSpot::close_part_of_position(Arc::new(position_closure), test_user)
-        .await
-        .unwrap();
+    // ExchangeServiceSpot::close_part_of_position(Arc::new(position_closure), test_user)
+    //     .await
+    //     .unwrap();
 
     // ExchangeServicePerpetual::set_leverage(&client, &"XRPUSDT".to_string(), &"Buy".to_string(), dec!(8))
     //     .await
@@ -143,6 +143,13 @@ async fn main() {
     // println!(
     //     "{:#?}",
     //     ExchangeServicePerpetual::get_all_opened_positions(&client)
+    //         .await
+    //         .unwrap()
+    // );
+
+    // println!(
+    //     "{:#?}",
+    //     ExchangeServiceSpot::get_opened_position(&client, "SEILOR")
     //         .await
     //         .unwrap()
     // );

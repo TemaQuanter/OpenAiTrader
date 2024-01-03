@@ -207,8 +207,16 @@ impl MessageService {
             if let Some(previous_msg_id) = cur_msg.response_message_id {
                 // Jump to a new message and repeat the loop.
                 // Fetch a message this message replies to.
-                cur_msg = Self::get_message_from_db_by_id(previous_msg_id, conn)
-                    .map_err(|error| AppError::new(error.to_string()))?;
+                cur_msg = match Self::get_message_from_db_by_id(previous_msg_id, conn) {
+                    Ok(cur_msg) => cur_msg,
+                    Err(error) => {
+                        log::error!("{}", error.to_string());
+
+                        // If there was an error while retrieving a message.
+                        // Jump out of the loop.
+                        break;
+                    } // end Err
+                } // end match
             } else {
                 // There are no more messages.
                 // The entire legend is assembled.
