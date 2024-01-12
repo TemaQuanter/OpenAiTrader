@@ -35,6 +35,9 @@ pub struct PositionIncrease {
     pub new_stop: Option<Decimal>,
     /// A percentage to increase the position by.
     pub percentage_to_increase: Decimal,
+    /// Whether this is a percentage from deposit or a percentage
+    /// from position.
+    pub percentage_from: String,
 } // end struct PositionIncrease
 
 /// This structure represents a closure of

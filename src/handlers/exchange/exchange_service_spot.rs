@@ -570,7 +570,11 @@ impl ExchangeServiceSpot {
         user: User,
     ) -> Result<(), AppError> {
         // Check if position to increase is not greater than an adequate value.
-        if position_increase_order.percentage_to_increase > dec!(300) {
+        if position_increase_order.percentage_to_increase > dec!(300)
+            && position_increase_order.percentage_from == "position"
+            || position_increase_order.percentage_to_increase > dec!(5)
+                && position_increase_order.percentage_from == "deposit"
+        {
             return Err(AppError::new("Inadequate risk"));
         } // end if
 
@@ -610,9 +614,34 @@ impl ExchangeServiceSpot {
             return Err(AppError::new("Position to increase is not opened."));
         } // end if
 
+        // Extra quantity of coins to buy.
+        let extra_qty: Decimal;
+
         // Calculate the quantity it is necessary to buy to increase the position size.
-        let extra_qty = position_to_increase.wallet_balance
-            * (position_increase_order.percentage_to_increase / dec!(100.0));
+        // Check whether it is necessary to increase the position size based on the opened
+        // position or deposit size.
+        if position_increase_order.percentage_from == "position" {
+            // Calculate the quantity it is necessary to buy to increase the position size.
+            extra_qty = position_to_increase.wallet_balance
+                * (position_increase_order.percentage_to_increase / dec!(100.0));
+        } else if position_increase_order.percentage_from == "deposit" {
+            // Make sure that user has a deposit set.
+            if user.deposit.is_none() {
+                return Err(AppError::new("Deposit is not set"));
+            } // end if
+
+            // Get deposit size.
+            let deposit = user.deposit.unwrap();
+
+            // Calculate the quantity it is necessary to buy to increase the position size.
+            extra_qty = (deposit * (position_increase_order.percentage_to_increase / dec!(100.0)))
+                / cur_coin_price;
+        } else {
+            // Invalid signal.
+            return Err(AppError::new(
+                "percentage_from can only be \"deposit\" or \"position\"",
+            )); // end return
+        } // end if
 
         // Get the price step of the asset on spot trading.
         let qty_step = Self::get_quantity_step(&client, &position_increase_order.ticker).await?;
