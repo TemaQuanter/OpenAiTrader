@@ -21,11 +21,13 @@
     "rasync",
     "reborrow",
     "repls",
+    "setisactive",
+    "subaccount",
     "teloxide",
     "tiktoken",
     "tpsl",
     "спот"
-  ],
+],
   "[python]": {
     "editor.defaultFormatter": "ms-python.autopep8"
   },

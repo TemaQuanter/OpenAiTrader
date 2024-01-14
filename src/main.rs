@@ -3,6 +3,7 @@ mod handlers;
 mod schema;
 mod utils;
 
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -112,6 +113,7 @@ async fn main() -> Result<(), AppError> {
 
     // Assemble a bot state.
     let bot_state = BotState {
+        user_dialog_states: Arc::new(Mutex::new(HashMap::new())),
         pg_connection_pool: Arc::new(pg_connection_pool),
         chatgpt_conversation_perpetual: Arc::new(Mutex::new(chatgpt_conversation_perpetual)),
         chatgpt_conversation_spot: Arc::new(Mutex::new(chatgpt_conversation_spot)),

@@ -1,7 +1,7 @@
 // This file contains all the functionality necessary to interact
 // with a user via Telegram bot.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use chatgpt::prelude::Conversation;
 use chrono::Utc;
@@ -15,12 +15,15 @@ use crate::utils::types_and_constants::PATH_TO_BOT_MANUAL;
 use serde::{Deserialize, Serialize};
 use teloxide::{
     adaptors::Throttle,
-    dispatching::{HandlerExt, UpdateFilterExt},
+    dispatching::{dialogue::GetChatId, HandlerExt, UpdateFilterExt},
     dptree,
-    payloads::SendMessageSetters,
+    payloads::{EditMessageReplyMarkupSetters, SendMessageSetters},
     prelude::Dispatcher,
     requests::{Requester, ResponseResult},
-    types::{ChatId, Message, ParseMode, Update},
+    types::{
+        CallbackQuery, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+        KeyboardMarkup, KeyboardRemove, Message, ParseMode, ReplyMarkup, Update,
+    },
     utils::command::BotCommands,
     Bot,
 };
@@ -37,10 +40,38 @@ use crate::{
 
 use super::message_service::MessageService;
 
+/// This structure is necessary to make initial setup for
+/// user account in the trading bot.
+#[derive(Clone, Default, PartialEq)]
+pub enum SetupDialogState {
+    #[default]
+    Start,
+    ReceiveDeposit,
+    ReceiveRisk {
+        deposit: Decimal,
+    },
+    ReceiveApiExchangeKey {
+        deposit: Decimal,
+        risk: Decimal,
+    },
+    ReceiveApiExchangeSecret {
+        deposit: Decimal,
+        risk: Decimal,
+        exchange_api_key: String,
+    },
+    ReceiveBotAllowedToTrade {
+        deposit: Decimal,
+        risk: Decimal,
+        exchange_api_key: String,
+        exchange_api_secret: String,
+    },
+} // end SetupDialogState
+
 /// This structure contains a common state for bot message
 /// handler.
 #[derive(Clone)]
 pub struct BotState {
+    pub user_dialog_states: Arc<Mutex<HashMap<i64, SetupDialogState>>>,
     /// Database connection pool.
     pub pg_connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
     /// ChatGPT conversation for perpetual swaps trading.
@@ -199,7 +230,12 @@ impl BotService {
                 dptree::entry()
                     .filter_command::<SuperuserCommands>()
                     .endpoint(Self::handle_superuser_command),
-            );
+            )
+            .branch(dptree::entry().endpoint(Self::handle_setup_dialog)); // end Update::filter_message()
+
+        // A handler that handles callback queries.
+        let callback_query_handler = Update::filter_callback_query()
+            .branch(dptree::entry().endpoint(Self::handle_callback_queries));
 
         // A handler that determines the behavior of the bot in regards to
         // channel posts.
@@ -210,7 +246,10 @@ impl BotService {
         ); // end Update::filter_message
 
         // Main handler that joins all handlers into one.
-        let handler = dptree::entry().branch(chat_handler).branch(channel_handler);
+        let handler = dptree::entry()
+            .branch(chat_handler)
+            .branch(callback_query_handler)
+            .branch(channel_handler);
 
         let mut bot_service_job = Dispatcher::builder(bot, handler)
             // Specify initial dependencies that all handlers will receive; they can be
@@ -231,6 +270,363 @@ impl BotService {
 
         listener
     } // end fn set_listener
+
+    /// This function handles callback queries in the bot in various dialogs.
+    async fn handle_callback_queries(
+        _bot_state: BotState,
+        _bot: Throttle<Bot>,
+        _q: CallbackQuery,
+    ) -> ResponseResult<()> {
+        todo!();
+    } // end fn handle_callback_queries
+
+    /// This function handles initial dialog that helps a user to set up everything
+    /// required for automated trading.
+    async fn handle_setup_dialog(
+        bot_state: BotState,
+        bot: Throttle<Bot>,
+        msg: Message,
+    ) -> ResponseResult<()> {
+        // Get a user from the message.
+        let user = MessageService::get_user(&msg);
+
+        // Check that the user was extracted successfully.
+        if user.is_none() {
+            // The user could not be extracted.
+            return Ok(());
+        } // end if
+
+        // Safely unwrap the user.
+        let user = user.unwrap();
+
+        // Lock the mutex with user state.
+        let user_dialog_states = bot_state.user_dialog_states.lock().await;
+
+        // Get user state in the dialog.
+        let user_state = user_dialog_states.get(&(user.id.0 as i64));
+
+        // Make sure that the user has started the dialog.
+        if user_state.is_none() {
+            // The user has not started the dialog.
+            return Ok(());
+        } // end if
+
+        // Safely unwrap the dialog state.
+        let user_state = user_state.unwrap().clone();
+
+        // Drop the mutex, to be able to call other functions, using bot state.
+        drop(user_dialog_states);
+
+        // Handle dialog message.
+        match user_state {
+            // Handle the default state of the dialog.
+            SetupDialogState::Start => {
+                // If the user dialog state is Start, then do nothing
+                // (This is handled by /start command).
+                return Ok(());
+            } // end SetupDialogState::Start
+            // Get the deposit amount from the user.
+            SetupDialogState::ReceiveDeposit => {
+                // Get the deposit amount from the user.
+                let amount_raw = msg.text().unwrap_or_default();
+
+                // Try to convert the string to decimal.
+                if let Ok(amount) = amount_raw.parse::<Decimal>() {
+                    // The parsing was successful, call a function to set a deposit.
+                    Self::handle_user_command(
+                        bot_state.clone(),
+                        bot.clone(),
+                        msg.clone(),
+                        UserCommands::SetDeposit(amount),
+                    )
+                    .await?;
+
+                    // Change the state of the dialog.
+                    bot_state.user_dialog_states.lock().await.insert(
+                        user.id.0 as i64,
+                        SetupDialogState::ReceiveRisk { deposit: amount },
+                    );
+
+                    // Ask a user to send the risk.
+                    bot.send_message(msg.chat.id, "Wonderful! Now, send me the risk per trade you would like to use in percentage\n\
+                    Example: 1\n(P.S It means that your R will be 1% from your deposit)").await?;
+                } else {
+                    // The user passed a non-decimal value.
+                    // Inform them about it and allow them to repeat the attempt.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Oops, it seems to me it is not a number, please try again",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                } // end if
+            } // end SetupDialogState::ReceiveDeposit
+            SetupDialogState::ReceiveRisk { deposit } => {
+                // Get the deposit amount from the user.
+                let risk_raw = msg.text().unwrap_or_default();
+
+                // Try to convert the string to decimal.
+                if let Ok(risk) = risk_raw.parse::<Decimal>() {
+                    // The parsing was successful, call a function to set a risk.
+                    Self::handle_user_command(
+                        bot_state.clone(),
+                        bot.clone(),
+                        msg.clone(),
+                        UserCommands::SetRisk(risk),
+                    )
+                    .await?;
+
+                    // Change the state of the dialog.
+                    bot_state.user_dialog_states.lock().await.insert(
+                        user.id.0 as i64,
+                        SetupDialogState::ReceiveApiExchangeKey { deposit, risk },
+                    );
+
+                    // Ask a user to send the exchange API key.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Awesome! Now, send me the API key from your \
+                        account/subaccount where you would like to to trade\n\
+                    Example: Qw123ghe...77wia1\n",
+                    )
+                    .await?;
+                } else {
+                    // The user passed a non-decimal value.
+                    // Inform them about it and allow them to repeat the attempt.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Oops, it seems to me it is not a number, please try again",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                } // end if
+            } // end SetupDialogState::ReceiveRisk
+            SetupDialogState::ReceiveApiExchangeKey { deposit, risk } => {
+                // Get the deposit amount from the user.
+                let exchange_api_key = msg.text().unwrap_or_default().to_string();
+
+                // Check the provided key.
+                if !(exchange_api_key.chars().count() < 5 || exchange_api_key.contains(" ")) {
+                    // The check was successful, call a function to set a deposit.
+                    Self::handle_user_command(
+                        bot_state.clone(),
+                        bot.clone(),
+                        msg.clone(),
+                        UserCommands::SetExchangeApiKey(exchange_api_key.clone()),
+                    )
+                    .await?;
+
+                    // Change the state of the dialog.
+                    bot_state.user_dialog_states.lock().await.insert(
+                        user.id.0 as i64,
+                        SetupDialogState::ReceiveApiExchangeSecret {
+                            deposit,
+                            risk,
+                            exchange_api_key,
+                        },
+                    );
+
+                    // Ask a user to send the exchange API secret.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Awesome! Now, send me the secret from the API\
+                        key you have just provided me with\n\
+                        Example: a2k343k2k3...6b8k23\n",
+                    )
+                    .await?;
+                } else {
+                    // The user passed a wrong value.
+                    // Inform them about it and allow them to repeat the attempt.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Oops, it seems to me it is not a valid key, please try again",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                } // end if
+            } // end SetupDialogState::ReceiveExchangeApiKey
+            SetupDialogState::ReceiveApiExchangeSecret {
+                deposit,
+                risk,
+                exchange_api_key,
+            } => {
+                // Get the deposit amount from the user.
+                let exchange_api_secret = msg.text().unwrap_or_default().to_string();
+
+                // Check the provided key.
+                if !(exchange_api_secret.chars().count() < 5 || exchange_api_secret.contains(" ")) {
+                    // The check was successful, call a function to set a deposit.
+                    Self::handle_user_command(
+                        bot_state.clone(),
+                        bot.clone(),
+                        msg.clone(),
+                        UserCommands::SetExchangeApiSecret(exchange_api_secret.clone()),
+                    )
+                    .await?;
+
+                    // Inform the user that there is an attempt to access their account.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Please, wait a little bit.\n\
+                            I'm trying to access your account...",
+                    )
+                    .await?;
+
+                    // Check the connection to the exchange via available credentials.
+                    let client = ExchangeService::get_client(
+                        exchange_api_key.clone(),
+                        exchange_api_secret.clone(),
+                    );
+
+                    // Request total USDT equity of user's account.
+                    match ExchangeService::get_uta_total_equity(&client).await {
+                        Ok(total_usdt_equity) => {
+                            // A request was successful.
+                            // Inform a user about it.
+                            bot.send_message(
+                                msg.chat.id,
+                                format!(
+                                    "<b>I'm able to access your account!🥳🥳🥳</b>\n\n\
+                            You have <b>${}</b> for trading :)",
+                                    total_usdt_equity.floor()
+                                ),
+                            )
+                            .parse_mode(ParseMode::Html)
+                            .await?;
+                        } // end Ok
+                        Err(error) => {
+                            log::error!("{}", error);
+
+                            // Inform a user that is was impossible to connect
+                            // to their account.
+                            bot.send_message(
+                                msg.chat.id,
+                                "Unfortunately, I did not manage to connect to your account, \
+                            please, try again to provide both API key and API secret.\n\n\
+                            Right now, please send me API key again",
+                            )
+                            .await?;
+
+                            // Set the dialog state back to receiving API key.
+                            bot_state.user_dialog_states.lock().await.insert(
+                                user.id.0 as i64,
+                                SetupDialogState::ReceiveApiExchangeKey { deposit, risk },
+                            );
+
+                            return Ok(());
+                        } // end Err
+                    } // end match
+
+                    // Change the state of the dialog.
+                    bot_state.user_dialog_states.lock().await.insert(
+                        user.id.0 as i64,
+                        SetupDialogState::ReceiveBotAllowedToTrade {
+                            deposit,
+                            risk,
+                            exchange_api_key,
+                            exchange_api_secret,
+                        },
+                    );
+
+                    // Ask a user to send the exchange API secret.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Excellent! Now, tell me, whether or not you allow me to\
+                        start managing your assets right now!\n",
+                    )
+                    .reply_markup(KeyboardMarkup::new(vec![
+                        vec![KeyboardButton::new("Yes, sure!")],
+                        vec![KeyboardButton::new("No, not right now")],
+                    ]))
+                    .await?;
+                } else {
+                    // The user passed a wrong value.
+                    // Inform them about it and allow them to repeat the attempt.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Oops, it seems to me it is not a valid secret, please try again",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                } // end if
+            } // end SetupDialogState::ReceiveExchangeApiSecret
+            SetupDialogState::ReceiveBotAllowedToTrade {
+                deposit: _,
+                risk: _,
+                exchange_api_key: _,
+                exchange_api_secret: _,
+            } => {
+                // Get the deposit amount from the user.
+                let allowed_to_trade = msg.text().unwrap_or_default().to_string();
+
+                // Try to shadow the permission.
+                let allowed_to_trade = if allowed_to_trade == "Yes, sure!" {
+                    true
+                } else if allowed_to_trade == "No, not right now" {
+                    false
+                } else {
+                    // Inform the user that it was incorrect and ask them to try again.
+                    // The user passed a wrong value.
+                    // Inform them about it and allow them to repeat the attempt.
+                    bot.send_message(
+                        msg.chat.id,
+                        "Oops, it seems to me it is not a valid reply, please try again",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+
+                    return Ok(());
+                }; // end if
+
+                // The check was successful, call a function to set a deposit.
+                Self::handle_user_command(
+                    bot_state.clone(),
+                    bot.clone(),
+                    msg.clone(),
+                    UserCommands::SetIsActive(allowed_to_trade),
+                )
+                .await?;
+
+                // This is the end of the dialog, exit it.
+                bot_state
+                    .user_dialog_states
+                    .lock()
+                    .await
+                    .remove(&(user.id.0 as i64));
+
+                // Ask a user to send the exchange API secret.
+                bot.send_message(
+                    msg.chat.id,
+                    "Congratulations! You are all set!\n\n\
+                Here are all your settings👇👇👇",
+                )
+                .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
+                .await?;
+
+                // Display the settings to the user.
+                Self::handle_user_command(
+                    bot_state.clone(),
+                    bot.clone(),
+                    msg.clone(),
+                    UserCommands::GetSettings,
+                )
+                .await?;
+
+                // Explain the user how they can update settings.
+                bot.send_message(
+                    msg.chat.id,
+                    "If you need to adjust some of the settings, you have <b>2 options</b>\n\n\
+                1) Use /help command to adjust settings via available commands\n\n\
+                2) User /start command to use the dialog you have just had with me again\n\n\
+                <b>Glad you decided to join me 😊</b>",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?;
+            } // end SetupDialogState::ReceiveBotAllowedToTrade
+        } // end match
+
+        return Ok(());
+    } // end fn handle_setup_dialog
 
     /// This function is a handler for bot commands sent by a general user or higher.
     async fn handle_user_command(
@@ -313,9 +709,29 @@ impl BotService {
                     } // end if
 
                     // Great the user.
-                    bot.send_message(msg.chat.id, "Welcome to <b>OPEN-AI-TRADER</b> bot!")
-                        .parse_mode(ParseMode::Html)
-                        .await?;
+                    bot.send_message(
+                        msg.chat.id,
+                        "Welcome to <b>OPEN-AI-TRADER</b> bot!\n\n\
+                    Now I'll help you to set up everything)\n\n",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+
+                    // Switch the user dialog to the next step.
+                    bot_state
+                        .user_dialog_states
+                        .lock()
+                        .await
+                        .insert(user.id.0 as i64, SetupDialogState::ReceiveDeposit);
+
+                    // Ask the user the first question.
+                    // Query the deposit amount.
+                    bot.send_message(
+                        msg.chat.id,
+                        "At first, what is your trading deposit amount in USDT? (Provide only number)",
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
 
                     return Ok(());
                 } // end if
@@ -656,16 +1072,13 @@ impl BotService {
                 // Check if the bot becomes active or inactive.
                 if registered_user.bot_active {
                     // Inform a user that the bot will be trading for them.
-                    bot.send_message(
-                        msg.chat.id,
-                        "🔥 Alright, bot <b>WILL</b> now trade for you!",
-                    )
-                    .parse_mode(ParseMode::Html)
-                    .await?
+                    bot.send_message(msg.chat.id, "🔥 Alright, I <b>WILL</b> now trade for you!")
+                        .parse_mode(ParseMode::Html)
+                        .await?
                 } else {
                     bot.send_message(
                         msg.chat.id,
-                        "🔥 Alright, bot <b>WILL NOT</b> trade for you anymore",
+                        "🔥 Alright, I <b>WILL NOT</b> trade for you anymore",
                     )
                     .parse_mode(ParseMode::Html)
                     .await?
@@ -799,7 +1212,16 @@ impl BotService {
 
                         // Inform the user about that.
 
-                        bot.send_message(msg.chat.id, format!("<b>I'm able to access your account!🥳🥳🥳</b>\n\nYou have <b>${}</b> for trading :)", balance.floor())).parse_mode(ParseMode::Html).await?;
+                        bot.send_message(
+                            msg.chat.id,
+                            format!(
+                                "<b>I'm able to access your account!🥳🥳🥳</b>\n\n\
+                        You have <b>${}</b> for trading :)",
+                                balance.floor()
+                            ),
+                        )
+                        .parse_mode(ParseMode::Html)
+                        .await?;
                     } // end Ok
                     Err(error) => {
                         log::error!("{}", error);
