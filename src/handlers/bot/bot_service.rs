@@ -11,18 +11,18 @@ use diesel::{
 };
 use rust_decimal::Decimal;
 
-use crate::utils::types_and_constants::PATH_TO_BOT_MANUAL;
+use crate::utils::{lazy_static::SUBSCRIPTION_BOT_URL, types_and_constants::PATH_TO_BOT_MANUAL};
 use serde::{Deserialize, Serialize};
 use teloxide::{
     adaptors::Throttle,
-    dispatching::{dialogue::GetChatId, HandlerExt, UpdateFilterExt},
+    dispatching::{HandlerExt, UpdateFilterExt},
     dptree,
-    payloads::{EditMessageReplyMarkupSetters, SendMessageSetters},
+    payloads::SendMessageSetters,
     prelude::Dispatcher,
     requests::{Requester, ResponseResult},
     types::{
-        CallbackQuery, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
-        KeyboardMarkup, KeyboardRemove, Message, ParseMode, ReplyMarkup, Update,
+        CallbackQuery, ChatId, KeyboardButton, KeyboardMarkup, KeyboardRemove, Message, ParseMode,
+        ReplyMarkup, Update,
     },
     utils::command::BotCommands,
     Bot,
@@ -94,9 +94,11 @@ pub struct BotState {
 enum UserCommands {
     #[command(description = "start interaction with the bot.")]
     Start,
+    #[command(description = "cancel dialog.")]
+    Cancel,
     #[command(description = "display this text.")]
     Help,
-    #[command(description = "set a new deposit amount (for risk calculation)")]
+    #[command(description = "set a new deposit (for risk calculation)")]
     SetDeposit(Decimal),
     #[command(description = "set a new risk per trade in percentage")]
     SetRisk(Decimal),
@@ -325,9 +327,9 @@ impl BotService {
                 // (This is handled by /start command).
                 return Ok(());
             } // end SetupDialogState::Start
-            // Get the deposit amount from the user.
+            // Get the deposit from the user.
             SetupDialogState::ReceiveDeposit => {
-                // Get the deposit amount from the user.
+                // Get the deposit from the user.
                 let amount_raw = msg.text().unwrap_or_default();
 
                 // Try to convert the string to decimal.
@@ -348,8 +350,8 @@ impl BotService {
                     );
 
                     // Ask a user to send the risk.
-                    bot.send_message(msg.chat.id, "Wonderful! Now, send me the risk per trade you would like to use in percentage\n\
-                    Example: 1\n(P.S It means that your R will be 1% from your deposit)").await?;
+                    bot.send_message(msg.chat.id, "Wonderful! Now, send me the risk per trade you would like to use in percentage\n\n\
+                    <b>Example:</b> 1.85\n\nIt means that your R (risk per trade) will be 1.85% from your deposit").parse_mode(ParseMode::Html).await?;
                 } else {
                     // The user passed a non-decimal value.
                     // Inform them about it and allow them to repeat the attempt.
@@ -362,7 +364,7 @@ impl BotService {
                 } // end if
             } // end SetupDialogState::ReceiveDeposit
             SetupDialogState::ReceiveRisk { deposit } => {
-                // Get the deposit amount from the user.
+                // Get the deposit from the user.
                 let risk_raw = msg.text().unwrap_or_default();
 
                 // Try to convert the string to decimal.
@@ -386,9 +388,11 @@ impl BotService {
                     bot.send_message(
                         msg.chat.id,
                         "Awesome! Now, send me the API key from your \
-                        account/subaccount where you would like to to trade\n\
-                    Example: Qw123ghe...77wia1\n",
+                        account/subaccount where you would like me to trade\n\n\
+                    <b>Example:</b> Qw123ghe...77wia1\n\nP.S It must be API key only! \
+                    API secret will be requested later.",
                     )
+                    .parse_mode(ParseMode::Html)
                     .await?;
                 } else {
                     // The user passed a non-decimal value.
@@ -402,7 +406,7 @@ impl BotService {
                 } // end if
             } // end SetupDialogState::ReceiveRisk
             SetupDialogState::ReceiveApiExchangeKey { deposit, risk } => {
-                // Get the deposit amount from the user.
+                // Get the deposit from the user.
                 let exchange_api_key = msg.text().unwrap_or_default().to_string();
 
                 // Check the provided key.
@@ -429,10 +433,12 @@ impl BotService {
                     // Ask a user to send the exchange API secret.
                     bot.send_message(
                         msg.chat.id,
-                        "Awesome! Now, send me the secret from the API\
-                        key you have just provided me with\n\
-                        Example: a2k343k2k3...6b8k23\n",
+                        "Awesome! Now, send me the secret from the API \
+                        key you have just provided me with\n\n\
+                        <b>Example:</b> a2k343k2k3...6b8k23\n\n\
+                        P.S This secret should have been shown to you when you created your API key",
                     )
+                    .parse_mode(ParseMode::Html)
                     .await?;
                 } else {
                     // The user passed a wrong value.
@@ -450,7 +456,7 @@ impl BotService {
                 risk,
                 exchange_api_key,
             } => {
-                // Get the deposit amount from the user.
+                // Get the deposit from the user.
                 let exchange_api_secret = msg.text().unwrap_or_default().to_string();
 
                 // Check the provided key.
@@ -556,7 +562,7 @@ impl BotService {
                 exchange_api_key: _,
                 exchange_api_secret: _,
             } => {
-                // Get the deposit amount from the user.
+                // Get the deposit from the user.
                 let allowed_to_trade = msg.text().unwrap_or_default().to_string();
 
                 // Try to shadow the permission.
@@ -597,10 +603,11 @@ impl BotService {
                 // Ask a user to send the exchange API secret.
                 bot.send_message(
                     msg.chat.id,
-                    "Congratulations! You are all set!\n\n\
+                    "<b>Congratulations! You are all set! 😍</b>\n\n\
                 Here are all your settings👇👇👇",
                 )
                 .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
+                .parse_mode(ParseMode::Html)
                 .await?;
 
                 // Display the settings to the user.
@@ -646,6 +653,13 @@ impl BotService {
 
         // Safely unwrap the user.
         let user = user.unwrap();
+
+        // Reset dialog, if started.
+        bot_state
+            .user_dialog_states
+            .lock()
+            .await
+            .remove(&(user.id.0 as i64));
 
         // Run all the necessary checks regarding user status and
         // get a pooled database connection.
@@ -725,10 +739,12 @@ impl BotService {
                         .insert(user.id.0 as i64, SetupDialogState::ReceiveDeposit);
 
                     // Ask the user the first question.
-                    // Query the deposit amount.
+                    // Query the deposit.
                     bot.send_message(
                         msg.chat.id,
-                        "At first, what is your trading deposit amount in USDT? (Provide only number)",
+                        "At first, what is your trading deposit in USDT?\n(Provide only number)\n\n\
+                        <b>Example:</b> 1000\n\n\
+                        It means that your trading deposit is 1000 USDT",
                     )
                     .parse_mode(ParseMode::Html)
                     .await?;
@@ -769,10 +785,22 @@ impl BotService {
                 }; // end User::insert_into_db
 
                 // Inform the user that the request was sent.
-                bot.send_message(msg.chat.id, "Hi! I added you to a waiting list, please wait for admin to review your application")
+                bot.send_message(msg.chat.id, format!("Hi! I added you to a waiting list, please wait for admin to review your application.\n\n\
+                If you want to become my client, then buy subscription in the following bot and it will be automatically activated here \n\n\
+                {}", *SUBSCRIPTION_BOT_URL))
                     .parse_mode(ParseMode::Html)
                     .await?
             } // end UserCommands::Start
+            UserCommands::Cancel => {
+                // The dialog is already canceled, as any command cancels it.
+                // Inform the user that the dialog is canceled.
+                bot.send_message(
+                    msg.chat.id,
+                    "Ok, the dialog is canceled.\n\nTo start it again, use /start command",
+                )
+                .parse_mode(ParseMode::Html)
+                .await?
+            } // end UserCommands::Cancel
             UserCommands::Help => {
                 // Verify the user.
                 let registered_user = match Self::get_user_and_verify_role(
@@ -846,7 +874,7 @@ impl BotService {
                 bot.send_message(
                     msg.chat.id,
                     format!(
-                        "💰 Deposit amount is set to <b>${}</b>!",
+                        "💰 Deposit is set to <b>${}</b>!",
                         registered_user.deposit.unwrap_or_default()
                     ),
                 )
