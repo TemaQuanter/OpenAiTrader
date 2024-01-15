@@ -3,6 +3,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use async_recursion::async_recursion;
 use chatgpt::prelude::Conversation;
 use chrono::Utc;
 use diesel::{
@@ -67,6 +68,23 @@ pub enum SetupDialogState {
     },
 } // end SetupDialogState
 
+// Messages to request the user data in the dialog.
+// They are necessary to skip the steps in the setup dialog.
+const MESSAGE_REQUEST_RISK: &str =
+    "Wonderful! Now, send me the risk per trade you would like to use in percentage\n\n\
+    <b>Example:</b> 1.85\n\nIt means that your R (risk per trade) will be 1.85% from your deposit";
+const MESSAGE_REQUEST_API_KEY: &str = "Awesome! Now, send me the API key from your \
+    account/subaccount where you would like me to trade\n\n\
+    <b>Example:</b> Qw123ghe...77wia1\n\nP.S It must be API key only! \
+    API secret will be requested later.";
+const MESSAGE_REQUEST_API_SECRET: &str = "Amazing! Now, send me the secret from the API \
+    key you have just provided me with\n\n\
+    <b>Example:</b> a2k343k2k3...6b8k23\n\n\
+    P.S This secret should have been shown to you when you created your API key";
+const MESSAGE_REQUEST_BOT_ALLOWED_TO_TRADE: &str =
+    "Excellent! Now, tell me, whether or not you allow me to \
+start managing your assets right now!\n";
+
 /// This structure contains a common state for bot message
 /// handler.
 #[derive(Clone)]
@@ -86,7 +104,7 @@ pub struct BotState {
 } // end struct BotConfig
 
 /// These are all commands that the bot can handle for general user.
-#[derive(BotCommands, Clone)]
+#[derive(BotCommands, Clone, PartialEq)]
 #[command(
     rename_rule = "lowercase",
     description = "These commands are supported:"
@@ -96,6 +114,8 @@ enum UserCommands {
     Start,
     #[command(description = "cancel dialog.")]
     Cancel,
+    #[command(description = "skip a step in a dialog.")]
+    Skip,
     #[command(description = "display this text.")]
     Help,
     #[command(description = "set a new deposit (for risk calculation)")]
@@ -282,6 +302,46 @@ impl BotService {
         todo!();
     } // end fn handle_callback_queries
 
+    /// This function greets the user after they finished the dialog.
+    #[async_recursion]
+    async fn congratulate_and_guide_user(
+        bot: Throttle<Bot>,
+        msg: Message,
+        bot_state: BotState,
+    ) -> ResponseResult<()> {
+        // Welcome the user in the service.
+        bot.send_message(
+            msg.chat.id,
+            "<b>Congratulations! You are all set! 😍</b>\n\n\
+                    Here are all your settings👇👇👇",
+        )
+        .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
+        .parse_mode(ParseMode::Html)
+        .await?;
+
+        // Display the settings to the user.
+        Self::handle_user_command(
+            bot_state.clone(),
+            bot.clone(),
+            msg.clone(),
+            UserCommands::GetSettings,
+        )
+        .await?;
+
+        // Explain the user how they can update settings.
+        bot.send_message(
+            msg.chat.id,
+            "If you need to adjust some of the settings, you have <b>2 options</b>\n\n\
+                    1) Use /help command to adjust settings via available commands\n\n\
+                    2) User /start command to use the dialog you have just had with me again\n\n\
+                    <b>Glad you decided to join me 😊</b>",
+        )
+        .parse_mode(ParseMode::Html)
+        .await?;
+
+        return Ok(());
+    } // end fn congratulate_and_guide_user
+
     /// This function handles initial dialog that helps a user to set up everything
     /// required for automated trading.
     async fn handle_setup_dialog(
@@ -350,8 +410,9 @@ impl BotService {
                     );
 
                     // Ask a user to send the risk.
-                    bot.send_message(msg.chat.id, "Wonderful! Now, send me the risk per trade you would like to use in percentage\n\n\
-                    <b>Example:</b> 1.85\n\nIt means that your R (risk per trade) will be 1.85% from your deposit").parse_mode(ParseMode::Html).await?;
+                    bot.send_message(msg.chat.id, MESSAGE_REQUEST_RISK)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
                 } else {
                     // The user passed a non-decimal value.
                     // Inform them about it and allow them to repeat the attempt.
@@ -385,15 +446,9 @@ impl BotService {
                     );
 
                     // Ask a user to send the exchange API key.
-                    bot.send_message(
-                        msg.chat.id,
-                        "Awesome! Now, send me the API key from your \
-                        account/subaccount where you would like me to trade\n\n\
-                    <b>Example:</b> Qw123ghe...77wia1\n\nP.S It must be API key only! \
-                    API secret will be requested later.",
-                    )
-                    .parse_mode(ParseMode::Html)
-                    .await?;
+                    bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_KEY)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
                 } else {
                     // The user passed a non-decimal value.
                     // Inform them about it and allow them to repeat the attempt.
@@ -431,15 +486,9 @@ impl BotService {
                     );
 
                     // Ask a user to send the exchange API secret.
-                    bot.send_message(
-                        msg.chat.id,
-                        "Awesome! Now, send me the secret from the API \
-                        key you have just provided me with\n\n\
-                        <b>Example:</b> a2k343k2k3...6b8k23\n\n\
-                        P.S This secret should have been shown to you when you created your API key",
-                    )
-                    .parse_mode(ParseMode::Html)
-                    .await?;
+                    bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_SECRET)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
                 } else {
                     // The user passed a wrong value.
                     // Inform them about it and allow them to repeat the attempt.
@@ -535,16 +584,12 @@ impl BotService {
                     );
 
                     // Ask a user to send the exchange API secret.
-                    bot.send_message(
-                        msg.chat.id,
-                        "Excellent! Now, tell me, whether or not you allow me to\
-                        start managing your assets right now!\n",
-                    )
-                    .reply_markup(KeyboardMarkup::new(vec![
-                        vec![KeyboardButton::new("Yes, sure!")],
-                        vec![KeyboardButton::new("No, not right now")],
-                    ]))
-                    .await?;
+                    bot.send_message(msg.chat.id, MESSAGE_REQUEST_BOT_ALLOWED_TO_TRADE)
+                        .reply_markup(KeyboardMarkup::new(vec![
+                            vec![KeyboardButton::new("Yes, sure!")],
+                            vec![KeyboardButton::new("No, not right now")],
+                        ]))
+                        .await?;
                 } else {
                     // The user passed a wrong value.
                     // Inform them about it and allow them to repeat the attempt.
@@ -600,35 +645,8 @@ impl BotService {
                     .await
                     .remove(&(user.id.0 as i64));
 
-                // Ask a user to send the exchange API secret.
-                bot.send_message(
-                    msg.chat.id,
-                    "<b>Congratulations! You are all set! 😍</b>\n\n\
-                Here are all your settings👇👇👇",
-                )
-                .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
-                .parse_mode(ParseMode::Html)
-                .await?;
-
-                // Display the settings to the user.
-                Self::handle_user_command(
-                    bot_state.clone(),
-                    bot.clone(),
-                    msg.clone(),
-                    UserCommands::GetSettings,
-                )
-                .await?;
-
-                // Explain the user how they can update settings.
-                bot.send_message(
-                    msg.chat.id,
-                    "If you need to adjust some of the settings, you have <b>2 options</b>\n\n\
-                1) Use /help command to adjust settings via available commands\n\n\
-                2) User /start command to use the dialog you have just had with me again\n\n\
-                <b>Glad you decided to join me 😊</b>",
-                )
-                .parse_mode(ParseMode::Html)
-                .await?;
+                // Congratulate and guide the user.
+                Self::congratulate_and_guide_user(bot, msg, bot_state).await?;
             } // end SetupDialogState::ReceiveBotAllowedToTrade
         } // end match
 
@@ -655,11 +673,14 @@ impl BotService {
         let user = user.unwrap();
 
         // Reset dialog, if started.
-        bot_state
-            .user_dialog_states
-            .lock()
-            .await
-            .remove(&(user.id.0 as i64));
+        // Reset the dialog only if it is not a command to skip the setup step.
+        if cmd != UserCommands::Skip {
+            bot_state
+                .user_dialog_states
+                .lock()
+                .await
+                .remove(&(user.id.0 as i64));
+        } // end if
 
         // Run all the necessary checks regarding user status and
         // get a pooled database connection.
@@ -789,7 +810,7 @@ impl BotService {
                 If you want to become my client, then buy subscription in the following bot and it will be automatically activated here \n\n\
                 {}", *SUBSCRIPTION_BOT_URL))
                     .parse_mode(ParseMode::Html)
-                    .await?
+                    .await?;
             } // end UserCommands::Start
             UserCommands::Cancel => {
                 // The dialog is already canceled, as any command cancels it.
@@ -799,8 +820,111 @@ impl BotService {
                     "Ok, the dialog is canceled.\n\nTo start it again, use /start command",
                 )
                 .parse_mode(ParseMode::Html)
-                .await?
+                .await?;
             } // end UserCommands::Cancel
+            UserCommands::Skip => {
+                // Skip the setup step in the dialog.
+
+                // Lock the mutex on dialog states.
+                let dialog_states = bot_state.user_dialog_states.lock().await;
+
+                // Get the current dialog state for the user.
+                let cur_dialog_state = dialog_states.get(&(user.id.0 as i64));
+
+                // Check if the dialog state is set for the user.
+                if cur_dialog_state.is_none() {
+                    // Current dialog state is not set for the user.
+                    return Ok(());
+                } // end if
+
+                // Inform the user that the step in the dialog is skipped.
+                bot.send_message(msg.chat.id, "Ok, skipping this step...")
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+
+                // Safely unwrap current dialog state.
+                let cur_dialog_state = cur_dialog_state.unwrap().to_owned();
+
+                // Drop the mutex lock to avoid a deadlock.
+                drop(dialog_states);
+
+                // Get the next step in a dialog.
+                let next_step = match cur_dialog_state {
+                    SetupDialogState::Start => SetupDialogState::Start,
+                    SetupDialogState::ReceiveDeposit => {
+                        // Prompt a user for risk.
+                        bot.send_message(msg.chat.id, MESSAGE_REQUEST_RISK)
+                            .parse_mode(ParseMode::Html)
+                            .await?;
+                        SetupDialogState::ReceiveRisk {
+                            deposit: Default::default(),
+                        }
+                    } // end SetupDialogState::ReceiveDeposit
+                    SetupDialogState::ReceiveRisk { deposit } => {
+                        // Prompt a user for API key.
+                        bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_KEY)
+                            .parse_mode(ParseMode::Html)
+                            .await?;
+                        SetupDialogState::ReceiveApiExchangeKey {
+                            deposit,
+                            risk: Default::default(),
+                        }
+                    } // end SetupDialogState::ReceiveRisk
+                    SetupDialogState::ReceiveApiExchangeKey { deposit, risk } => {
+                        // Prompt a user for API secret.
+                        bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_SECRET)
+                            .parse_mode(ParseMode::Html)
+                            .await?;
+                        SetupDialogState::ReceiveApiExchangeSecret {
+                            deposit,
+                            risk,
+                            exchange_api_key: Default::default(),
+                        }
+                    } // end SetupDialogState::ReceiveApiExchangeKey
+                    SetupDialogState::ReceiveApiExchangeSecret {
+                        deposit,
+                        risk,
+                        exchange_api_key,
+                    } => {
+                        // Prompt a user for permission to manage asset.
+                        bot.send_message(msg.chat.id, MESSAGE_REQUEST_BOT_ALLOWED_TO_TRADE)
+                            .parse_mode(ParseMode::Html)
+                            .reply_markup(KeyboardMarkup::new(vec![
+                                vec![KeyboardButton::new("Yes, sure!")],
+                                vec![KeyboardButton::new("No, not right now")],
+                            ]))
+                            .await?;
+                        SetupDialogState::ReceiveBotAllowedToTrade {
+                            deposit,
+                            risk,
+                            exchange_api_key,
+                            exchange_api_secret: Default::default(),
+                        }
+                    } // end SetupDialogState::ReceiveApiExchangeSecret
+                    SetupDialogState::ReceiveBotAllowedToTrade {
+                        deposit: _,
+                        risk: _,
+                        exchange_api_key: _,
+                        exchange_api_secret: _,
+                    } => {
+                        // Congratulate the user with the end of account setup.
+                        Self::congratulate_and_guide_user(bot, msg.clone(), bot_state.clone())
+                            .await?;
+                        SetupDialogState::Start
+                    } // end SetupDialogState::ReceiveBotAllowedToTrade
+                }; // end match
+
+                // Lock the mutex on dialog states.
+                let mut dialog_states = bot_state.user_dialog_states.lock().await;
+
+                // If the next step is starting step, then remove the dialog state.
+                // Otherwise, update the dialog state.
+                if next_step == SetupDialogState::Start {
+                    dialog_states.remove(&(user.id.0 as i64));
+                } else {
+                    dialog_states.insert(user.id.0 as i64, next_step);
+                } // end if
+            } // end UserCommands::Skip
             UserCommands::Help => {
                 // Verify the user.
                 let registered_user = match Self::get_user_and_verify_role(
@@ -836,7 +960,7 @@ impl BotService {
                 // Send the help instructions to the user.
                 bot.send_message(msg.chat.id, manual)
                     .parse_mode(ParseMode::Html)
-                    .await?
+                    .await?;
             } // end UserCommands::Help
             UserCommands::SetDeposit(amount) => {
                 // Verify the user.
@@ -879,7 +1003,7 @@ impl BotService {
                     ),
                 )
                 .parse_mode(ParseMode::Html)
-                .await?
+                .await?;
             } // end Command::SetDeposit
             UserCommands::SetRisk(risk) => {
                 // Verify the user.
@@ -922,7 +1046,7 @@ impl BotService {
                     ),
                 )
                 .parse_mode(ParseMode::Html)
-                .await?
+                .await?;
             } // end Command::SetRisk
             UserCommands::SetExchangeApiKey(exchange_api_key) => {
                 // Verify the user.
@@ -986,7 +1110,7 @@ impl BotService {
                     ),
                 )
                 .parse_mode(ParseMode::Html)
-                .await?
+                .await?;
             } // end Command::SetExchangeApiKey
             UserCommands::SetExchangeApiSecret(exchange_api_secret) => {
                 // Verify the user.
@@ -1050,7 +1174,7 @@ impl BotService {
                     ),
                 )
                 .parse_mode(ParseMode::Html)
-                .await?
+                .await?;
             } // end Command::SetExchangeApiSecret
             UserCommands::SetIsActive(bot_active) => {
                 // Verify the user.
@@ -1102,14 +1226,14 @@ impl BotService {
                     // Inform a user that the bot will be trading for them.
                     bot.send_message(msg.chat.id, "🔥 Alright, I <b>WILL</b> now trade for you!")
                         .parse_mode(ParseMode::Html)
-                        .await?
+                        .await?;
                 } else {
                     bot.send_message(
                         msg.chat.id,
                         "🔥 Alright, I <b>WILL NOT</b> trade for you anymore",
                     )
                     .parse_mode(ParseMode::Html)
-                    .await?
+                    .await?;
                 } // end if
             } // end Command::SetIsActive
             UserCommands::GetSettings => {
@@ -1173,7 +1297,7 @@ impl BotService {
                 // Send the current settings to the user.
                 bot.send_message(msg.chat.id, cur_settings_message)
                     .parse_mode(ParseMode::Html)
-                    .await?
+                    .await?;
             } // end UserCommands::GetSettings
             UserCommands::CheckExchangeApiConnection => {
                 // Verify the user.
@@ -1282,7 +1406,7 @@ impl BotService {
 
                 return Ok(());
             } // end Command::CheckExchangeApiConnection
-        }; // end match
+        } // end match
 
         Ok(())
     } // end fn handle_user_command
