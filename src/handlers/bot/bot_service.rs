@@ -747,7 +747,9 @@ impl BotService {
                     bot.send_message(
                         msg.chat.id,
                         "Welcome to <b>OPEN-AI-TRADER</b> bot!\n\n\
-                    Now I'll help you to set up everything)\n\n",
+                    Now I'll help you to set up everything)\n\n\
+                    Just follow the steps and if you want to skip a step in a setup, \
+                    use /skip command",
                     )
                     .parse_mode(ParseMode::Html)
                     .await?;
