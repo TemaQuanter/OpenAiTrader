@@ -1282,6 +1282,36 @@ impl BotService {
                     String::from("Set, but unsafe to show")
                 }; // end if
 
+                // Get the days before API key expires, if all the data provided.
+                let api_expiration_days = if registered_user.exchange_api_key.is_some()
+                    && registered_user.exchange_api_secret.is_some()
+                {
+                    // Retrieve credentials.
+                    let api_key = registered_user.exchange_api_key.clone().unwrap();
+                    let api_secret = registered_user.exchange_api_secret.clone().unwrap();
+
+                    // Get an exchange client.
+                    let client = ExchangeService::get_client(api_key, api_secret);
+
+                    let api_key_deadline_days =
+                        ExchangeService::get_api_deadline_days(&client).await;
+
+                    // Check whether or not it was possible to get the API info.
+                    if api_key_deadline_days.is_err() {
+                        // An error occurred while accessing user exchange account.
+                        log::error!("{}", api_key_deadline_days.err().unwrap().to_string());
+
+                        String::from("@")
+                    } else {
+                        // Otherwise, safely unwrap the info and display it to the user.
+                        let api_key_deadline_days = api_key_deadline_days.unwrap();
+
+                        api_key_deadline_days.to_string()
+                    } // end if
+                } else {
+                    String::from("@")
+                }; // end if
+
                 // Get a status whether or not the bot is able to access the exchange
                 // with the provided keys.
                 let exchange_api_data_validated = if registered_user.exchange_api_data_validated {
@@ -1292,8 +1322,8 @@ impl BotService {
 
                 // Generate a message with current user settings.
                 let cur_settings_message = format!(
-                    "<b>⚙️Settings⚙️</b>\n\n<b>💰 Deposit:</b> {}\n<b>❗️ Risk:</b> {}\n\n<b>🔑 API Exchange key:</b> <em>{}</em>\n<b>㊙️ API Exchange secret:</b> <em>{}</em>\n\n{}\n\n<b>🔥 Bot allowed to trade:</b> {}",
-                        deposit, risk, exchange_api_key_info, exchange_api_secret_info, exchange_api_data_validated, registered_user.bot_active
+                    "<b>⚙️Settings⚙️</b>\n\n<b>💰 Deposit:</b> {}\n<b>❗️ Risk:</b> {}\n\n<b>🔑 API Exchange key:</b> <em>{}</em>\n<b>㊙️ API Exchange secret:</b> <em>{}</em>\n\n{}\n\n⏳ API key expires in <b>{} days</b>\n\n<b>🔥 Bot allowed to trade:</b> {}",
+                        deposit, risk, exchange_api_key_info, exchange_api_secret_info, exchange_api_data_validated, api_expiration_days, registered_user.bot_active
                 );
 
                 // Send the current settings to the user.

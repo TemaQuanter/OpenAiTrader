@@ -280,4 +280,26 @@ impl ExchangeService {
         // exchange.
         return Err(AppError::new(error_message));
     } // end fn validate_exchange_response
+
+    /// This function returns the number of remaining days before API key expires.
+    pub async fn get_api_deadline_days(client: &Client) -> Result<i32, AppError> {
+        // Get the information about UTA equity.
+        let response: serde_json::Value = client
+            .get(
+                "/v5/user/query-api",
+                Option::<&[()]>::None,
+                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+            )
+            .await
+            .map_err(|error| AppError::new(error.to_string()))?;
+
+        // Validate exchange response.
+        Self::validate_exchange_response(&response)?;
+
+        // Return the balance of the wallet in USDT.
+        Ok(response["result"]["deadlineDay"]
+            .to_string()
+            .parse::<i32>()
+            .unwrap())
+    } // end fn get_api_deadline_days
 } // end impl ExchangeService

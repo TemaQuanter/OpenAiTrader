@@ -127,14 +127,24 @@ async fn main() -> Result<(), AppError> {
     // Bot instance for a server.
     let cloned_bot_for_server = bot.clone();
 
+    // Cloned connection pool for server.
+    let cloned_bot_state_for_api_informer = bot_state.clone();
+
+    // Bot instance for a server.
+    let cloned_bot_for_api_informer = bot.clone();
+
     // Set up bot listener (start listening for incoming messages)
     let bot_service = BotService::set_listener(bot.clone(), bot_state.clone()).await;
 
     // Determine the age of an "old" post.
-    let old_age = chrono::Duration::days(90);
+    let old_age = chrono::Duration::days(180);
 
     // Determine the frequency to remove "old" post with (in seconds).
     let wait_time_secs: u64 = 24 * 60 * 60;
+
+    // Deadline number of days before API key expiration (necessary to inform the users in advance
+    // about expiring keys)
+    let deadline_number_days = 3;
 
     log::info!("Got ChatGPT conversation");
     log::info!("Start listening for incoming messages");
@@ -148,6 +158,10 @@ async fn main() -> Result<(), AppError> {
         _ = async move {
             // Run a separate task to remove "old" posts from the database.
             MessageService::remove_old_messages(bot_state.clone(), old_age, wait_time_secs, bot.clone()).await;
+        } => {}
+        _ = async move {
+            // Run s separate task to inform the user about expiring API keys.
+            MessageService::inform_api_key_expiration(cloned_bot_state_for_api_informer, deadline_number_days, wait_time_secs, cloned_bot_for_api_informer).await;
         } => {}
         _ = async move {
             // Run a server.

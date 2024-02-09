@@ -1,14 +1,13 @@
 // This is a program to test float number precision.
 
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 fn main() {
-    let a = Some(Decimal::from_str_exact("48.4").unwrap());
-    let c = Some(Decimal::from_str_exact("0.1").unwrap());
+    let a = dec!(0.2);
+    let b = dec!(3.0);
 
-    a.unwrap();
+    let c = a / b;
 
-    let b = a;
-
-    println!("{}", a.unwrap());
+    println!("{}", c);
 } // end fn main

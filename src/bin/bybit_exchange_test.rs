@@ -43,6 +43,20 @@ async fn main() {
     );
 
     // println!(
+    //     "{}",
+    //     ExchangeServicePerpetual::get_quantity_step(&client, "SUIUSDT".to_string())
+    //         .await
+    //         .unwrap()
+    // );
+
+    println!(
+        "{:#?}",
+        ExchangeService::get_api_deadline_days(&client)
+            .await
+            .unwrap()
+    );
+
+    // println!(
     //     "{:#?}",
     //     ExchangeServiceSpot::get_opened_position(&client, "USDT")
     //         .await
@@ -108,9 +122,9 @@ async fn main() {
     //     .await
     //     .unwrap();
 
-    ExchangeServiceSpot::increase_position(Arc::new(position_increase), test_user)
-        .await
-        .unwrap();
+    // ExchangeServiceSpot::increase_position(Arc::new(position_increase), test_user)
+    //     .await
+    //     .unwrap();
 
     // ExchangeServiceSpot::close_part_of_position(Arc::new(position_closure), test_user)
     //     .await

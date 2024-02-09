@@ -14,7 +14,7 @@ use teloxide::{
 use tokio::sync::MutexGuard;
 
 use crate::{
-    db_objects::channel_history::ChannelHistory,
+    db_objects::{self, channel_history::ChannelHistory, status_model::StatusId},
     handlers::{
         bot::bot_service::BotService,
         exchange::{
@@ -322,6 +322,160 @@ impl MessageService {
             } // end Err
         }; // end match
     } // end fn get_message_from_db_by_id
+
+    /// This function informs the users when their API key is close to expiration.
+    pub async fn inform_api_key_expiration(
+        bot_state: BotState,
+        deadline_number_days: i32,
+        wait_time_secs: u64,
+        bot: Throttle<Bot>,
+    ) {
+        // This variable indicates whether or not the operation was successful.
+        let mut is_success = false;
+
+        // Endless loop that checks all users once in a while and informs them if their
+        // APi keys are close to expiration date.
+        loop {
+            // Check whether or not the operation was successful.
+            if is_success {
+                // Reset the flag to default value.
+                is_success = false;
+
+                // Wait till the next day to perform the task.
+                tokio::time::sleep(tokio::time::Duration::from_secs(wait_time_secs)).await;
+            } else {
+                // Wait for some time to repeat the task.
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            } // end if
+
+            // Get a connection to the database.
+            let conn =
+                &mut match DatabaseService::get_pool_connection(&bot_state.pg_connection_pool) {
+                    Ok(conn) => conn,
+                    Err(error) => {
+                        log::error!("{}", error);
+
+                        // Inform the users in the log channel about the error.
+                        match BotService::inform_client(
+                            &bot,
+                            bot_state.log_channel_id,
+                            "Failed to connect to the database (to remove old posts)",
+                        )
+                        .await
+                        {
+                            Ok(_) => (),
+                            Err(error) => {
+                                log::error!("{}", error);
+                            } // end Err
+                        }; // end match
+
+                        continue;
+                    } // end Err
+                }; // end match
+
+            // Get all users from the database.
+            let users =
+                db_objects::user_model::User::get_users_with_status(&StatusId::Approved, conn);
+
+            // Check if the retrieval was successful.
+            if users.is_err() {
+                // An error occurred while retrieving the users from the database.
+                log::error!("{}", users.err().unwrap().to_string());
+
+                // Log this error into the logger channel.
+                // Inform the users in the log channel about the error.
+                match BotService::inform_client(
+                    &bot,
+                    bot_state.log_channel_id,
+                    "Failed to retrieve the users to remind them about expiring API keys",
+                )
+                .await
+                {
+                    Ok(_) => (),
+                    Err(error) => {
+                        log::error!("{}", error);
+                    } // end Err
+                }; // end match
+
+                continue;
+            } // end if
+
+            // Safely unwrap the users.
+            let users = users.unwrap();
+
+            // Traverse all users and find those, whose API keys are close to expiration date.
+            for usr in users {
+                // Make sure that the user has API data.
+                if usr.exchange_api_key.is_none() || usr.exchange_api_secret.is_none() {
+                    // The user does not have API data provided.
+                    continue;
+                } // end if
+
+                // Safely extract the API credentials.
+                let api_key = usr.exchange_api_key.unwrap();
+                let api_secret = usr.exchange_api_secret.unwrap();
+
+                // Get user's exchange client.
+                let client = ExchangeService::get_client(api_key, api_secret);
+
+                // Get days til expiration for the user's API key.
+                let deadline_days = match ExchangeService::get_api_deadline_days(&client).await {
+                    Ok(deadline_days) => deadline_days,
+                    Err(error) => {
+                        // An error occurred, while retrieving the user data from
+                        // exchange. Skip them.
+                        log::error!("{}", error.to_string());
+
+                        continue;
+                    } // end Err
+                };
+
+                // Check if API key already expired.
+                if deadline_days == 0 {
+                    // The API key expired, inform a user about it.
+                    match BotService::inform_client(
+                        &bot,
+                        usr.telegram_id,
+                        format!(
+                            "Oops, your API key <b>expired!</b>\n\n\
+                            Now I cannot trade for you anymore...\n\n\
+                            Please, create a new one and then give it to me via dialog or commands",
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(()) => (),
+                        Err(error) => {
+                            log::error!("{}", error.to_string());
+                        } // end Err
+                    } // end match
+                } else if deadline_days <= deadline_number_days {
+                    // Check if the API key expires soon.
+
+                    // The expiration is close, inform the user about it.
+                    match BotService::inform_client(
+                        &bot,
+                        usr.telegram_id,
+                        format!(
+                            "Oops, your API key expires in <b>{} days!</b>\n\n\
+                            Please, create a new one and then give it to me via dialog or commands",
+                            deadline_days
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(()) => (),
+                        Err(error) => {
+                            log::error!("{}", error.to_string());
+                        } // end Err
+                    } // end match
+                } // end if
+            } // end for
+
+            // The operation went successfully.
+            is_success = true;
+        } // end loop
+    } // end fn inform_api_key_expiration
 
     /// This function gets read of old messages from the database.
     /// This function is considered to be run as a separate asynchronous task.

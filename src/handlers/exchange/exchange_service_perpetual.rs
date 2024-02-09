@@ -525,6 +525,7 @@ impl ExchangeServicePerpetual {
                 // The parameter is required.
                 serde_json::Value::String(trigger_price.unwrap().to_string())
             }, // end if
+            "tpslMode": "Full"
         }); // end post_request
 
         // Verify that the position is safe to open.
