@@ -821,6 +821,7 @@ impl BotService {
                     msg.chat.id,
                     "Ok, the dialog is canceled.\n\nTo start it again, use /start command",
                 )
+                .reply_markup(ReplyMarkup::KeyboardRemove(KeyboardRemove::new()))
                 .parse_mode(ParseMode::Html)
                 .await?;
             } // end UserCommands::Cancel
@@ -1314,11 +1315,12 @@ impl BotService {
 
                 // Get a status whether or not the bot is able to access the exchange
                 // with the provided keys.
-                let exchange_api_data_validated = if registered_user.exchange_api_data_validated {
-                    String::from("✅ API data is <b>valid</b>!")
-                } else {
-                    String::from("❌ API data is <b>invalid</b>")
-                }; // end if
+                let exchange_api_data_validated =
+                    if registered_user.exchange_api_data_validated && api_expiration_days != "@" {
+                        String::from("✅ API data is <b>valid</b>!")
+                    } else {
+                        String::from("❌ API data is <b>invalid</b>")
+                    }; // end if
 
                 // Generate a message with current user settings.
                 let cur_settings_message = format!(

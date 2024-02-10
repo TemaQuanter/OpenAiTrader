@@ -431,14 +431,14 @@ impl MessageService {
                 };
 
                 // Check if API key already expired.
-                if deadline_days == 0 {
+                if deadline_days == 1 {
                     // The API key expired, inform a user about it.
                     match BotService::inform_client(
                         &bot,
                         usr.telegram_id,
                         format!(
-                            "Oops, your API key <b>expired!</b>\n\n\
-                            Now I cannot trade for you anymore...\n\n\
+                            "Oops, your API key <b>expires in 1 day!</b>\n\n\
+                            I will not be able to trade for you anymore...\n\n\
                             Please, create a new one and then give it to me via dialog or commands",
                         ),
                     )

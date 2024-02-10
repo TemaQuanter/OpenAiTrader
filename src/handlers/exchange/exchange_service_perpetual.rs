@@ -467,7 +467,10 @@ impl ExchangeServicePerpetual {
             .map_err(|error| AppError::new(error.to_string()))?;
 
         // Adjust the quantity according to the quantity step.
-        let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
+        // If the quantity is less then the minimum quantity step, then make it equal to quantity step.
+        // Otherwise, the position will not be opened.
+        let qty =
+            (Decimal::floor(&(qty / quantity_step)) * quantity_step).max(quantity_step.to_owned());
 
         // Calculate an appropriate leverage.
         let leverage = if stop_loss_percentage < dec!(6.0) {
@@ -619,6 +622,11 @@ impl ExchangeServicePerpetual {
         // Calculate the quantity to close on each partial take profit.
         let partial_qty =
             Decimal::floor(&((qty / number_take_profits) / quantity_step)) * quantity_step;
+
+        // If the partial quantity is less then the quantity step, then do not set the take-profit grid.
+        if partial_qty < quantity_step.to_owned() {
+            return ExchangeService::validate_exchange_response(&response);
+        } // end if
 
         // Calculate the price step to close the orders.
         let price_step =
@@ -879,7 +887,8 @@ impl ExchangeServicePerpetual {
         let qty = cur_position.qty * (position_closure.percentage_to_close / dec!(100.0));
 
         // Adjust the quantity so to fit the quantity step restrictions.
-        let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
+        // If the quantity to fix is less, than the quantity step, then make it equal to quantity step.
+        let qty = (Decimal::floor(&(qty / quantity_step)) * quantity_step).max(quantity_step);
 
         // Send a request to adjust the position size on perpetual swaps.
         let response: serde_json::Value = client
