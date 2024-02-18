@@ -49,12 +49,12 @@ async fn main() {
     //         .unwrap()
     // );
 
-    println!(
-        "{:#?}",
-        ExchangeService::get_api_deadline_days(&client)
-            .await
-            .unwrap()
-    );
+    // println!(
+    //     "{:#?}",
+    //     ExchangeService::get_api_deadline_days(&client)
+    //         .await
+    //         .unwrap()
+    // );
 
     // println!(
     //     "{:#?}",
@@ -161,6 +161,17 @@ async fn main() {
     //         .await
     //         .unwrap()
     // );
+
+    println!(
+        "{:#?}",
+        ExchangeServiceSpot::_place_partial_take_profit_order(
+            &client,
+            &"UNIUSDT".to_string(),
+            "8".to_string(),
+            "10".to_string()
+        )
+        .await
+    )
 
     // println!(
     //     "{:#?}",

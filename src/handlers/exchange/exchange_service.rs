@@ -276,6 +276,10 @@ impl ExchangeService {
             "Null"
         }; // end if
 
+        // Add an error code to the response message.
+        let error_message =
+            error_message.to_string() + format!(" Response code: {}", response_code).as_str();
+
         // Return an error with the error message received from the
         // exchange.
         return Err(AppError::new(error_message));

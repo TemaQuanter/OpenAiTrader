@@ -404,7 +404,10 @@ impl ExchangeServiceSpot {
                 return Err(AppError::new(
                     "The market price is lower than the minimum entry price",
                 )); // end return
-            } else if position_opening.upper_bound_entry < cur_market_price {
+            } // end if
+
+            // Check if the price is withing the given range.
+            if position_opening.upper_bound_entry < cur_market_price {
                 // The asset price rose above the upper bound for entrance
                 // into a position.
                 return Err(AppError::new(
@@ -440,7 +443,13 @@ impl ExchangeServiceSpot {
             "symbol": &position_opening.ticker,
             "side": "Buy",
             "orderType": "Market",
-            "qty": qty.to_string(),
+            // If it is a conditional order, then use quote coins, otherwise use base coins.
+            "qty": if trigger_price.is_none() {
+                qty.to_string()
+            } else {
+                // Round up the volume in quote coins.
+                coins_value.ceil().to_string()
+            }, // end if
             // Required for conditional orders.
             "triggerPrice": if trigger_price.is_none() {
                 // It is a market order.
@@ -452,7 +461,12 @@ impl ExchangeServiceSpot {
                 serde_json::Value::String(trigger_price.unwrap().to_string())
             }, // end if
             "orderFilter": order_filter,
-            "marketUnit": "baseCoin"
+            // If it is a conditional order, then use quote coin, otherwise use base coin.
+            "marketUnit": if &position_opening.order_type == "conditional" {
+                "quoteCoin"
+            } else {
+                "baseCoin"
+            } // end if
         }); // end post_request
 
         // Verify that the position is safe to open.
@@ -1059,7 +1073,7 @@ impl ExchangeServiceSpot {
                     "orderType": "Market",
                     "symbol": ticker,
                     "triggerPrice":  trigger_price,
-                    "qty": qty.to_string(),
+                    "qty": qty,
                     "orderFilter": "StopOrder",
                     "marketUnit": "baseCoin"
                 })),
