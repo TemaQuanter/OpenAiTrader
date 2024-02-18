@@ -162,16 +162,16 @@ async fn main() {
     //         .unwrap()
     // );
 
-    println!(
-        "{:#?}",
-        ExchangeServiceSpot::_place_partial_take_profit_order(
-            &client,
-            &"UNIUSDT".to_string(),
-            "8".to_string(),
-            "10".to_string()
-        )
-        .await
-    )
+    // println!(
+    //     "{:#?}",
+    //     ExchangeServiceSpot::_place_partial_take_profit_order(
+    //         &client,
+    //         &"UNIUSDT".to_string(),
+    //         "8".to_string(),
+    //         "10".to_string()
+    //     )
+    //     .await
+    // )
 
     // println!(
     //     "{:#?}",

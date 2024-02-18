@@ -1,7 +1,7 @@
 // This file contains all the functionality to interact with
 // Bybit cryptocurrency exchange on perpetual swaps.
 
-use std::sync::Arc;
+use std::{clone, mem::take, sync::Arc};
 
 use crypto_botters::{
     bybit::{BybitHttpAuth, BybitOption},
@@ -17,7 +17,7 @@ use crate::{
     handlers::{
         bot::dto_perpetual::{
             ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
-            StopLossAdjustment,
+            StopLossAdjustment, TakeProfitPlacement,
         },
         exchange::dto_perpetual::OpenedOrder,
     },
@@ -276,6 +276,9 @@ impl ExchangeServicePerpetual {
         position_opening: Arc<PositionOpening>,
         user: User,
     ) -> Result<(), AppError> {
+        // Get a cloned user for partial take profits.
+        let cloned_user = user.clone();
+
         // Get user credentials.
         let api_key = user.exchange_api_key.unwrap();
         let api_secret = user.exchange_api_secret.unwrap();
@@ -641,11 +644,13 @@ impl ExchangeServicePerpetual {
         for _ in 0..number_take_profits.to_string().parse::<f64>().unwrap() as i32 {
             // Set a new conditional order with take profit.
             Self::place_partial_take_profit_order(
-                &client,
-                &position_opening.ticker,
-                &position_opening.direction,
-                cur_price.to_string(),
-                partial_qty.to_string(),
+                Arc::new(TakeProfitPlacement {
+                    ticker: position_opening.ticker.clone(),
+                    direction: position_opening.direction.clone(),
+                    take_profit_price: cur_price,
+                    take_profit_percentage: dec!(100) / (number_take_profits + dec!(1)),
+                }),
+                cloned_user.clone(),
             )
             .await?;
 
@@ -1256,24 +1261,76 @@ impl ExchangeServicePerpetual {
 
     /// This function places a partial take profit order.
     pub async fn place_partial_take_profit_order(
-        client: &Client,
-        ticker: &String,
-        position_side: &String,
-        trigger_price: String,
-        qty: String,
+        take_profit_order: Arc<TakeProfitPlacement>,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = ExchangeService::get_client(api_key, api_secret);
+
         // What position to close (hedge-short/hedge-long).
         let positions_idx: i32;
+        let position_side: &str;
 
-        // Determine the values for the order.
-        if position_side == "Buy" {
+        // Determine the values and directions for the order.
+        if take_profit_order.direction.to_lowercase() == "long"
+            || take_profit_order.direction == "Buy"
+        {
             positions_idx = 1;
-        } else if position_side == "Sell" {
+            position_side = "Buy";
+        } else if take_profit_order.direction.to_lowercase() == "short"
+            || take_profit_order.direction == "Sell"
+        {
             positions_idx = 2;
+            position_side = "Sell";
         } else {
             // It is an invalid position side.
             return Err(AppError::new("Invalid position side"));
         } // end if
+
+        // Get all opened positions on perpetual swaps.
+        let opened_positions = ExchangeServicePerpetual::get_all_opened_positions(&client).await?;
+
+        // The position searched for.
+        let mut cur_position: Option<OpenedPosition> = None;
+
+        // Find the position to set the take profit for.
+        for opened_position in opened_positions {
+            // Check if the current position is the position to set the take profit for.
+            if opened_position.ticker == take_profit_order.ticker
+                && opened_position.side == position_side
+            {
+                // This is the position searched for.
+                cur_position = Some(opened_position);
+
+                // The position is found.
+                break;
+            } // end if
+        } // end for
+
+        // Check if the position was found.
+        if cur_position.is_none() {
+            // Position to set the take profit for was not found.
+            return Err(AppError::new(
+                "Position to set take profit for was not found.",
+            )); // end return
+        } // end if
+
+        // Safely unwrap the position.
+        let cur_position = cur_position.unwrap();
+
+        // Get the quantity step of the contract.
+        let qty_step =
+            ExchangeServicePerpetual::get_quantity_step(&client, &take_profit_order.ticker).await?;
+
+        // Calculate the quantity to fix.
+        let qty = cur_position.qty * (take_profit_order.take_profit_percentage / dec!(100));
+
+        // Adjust the quantity with regard to quantity step of the contract.
+        let qty = Decimal::floor(&(qty / qty_step)) * qty_step;
 
         // Send a request to place a partial take profit order on perpetual swaps.
         let response: serde_json::Value = client
@@ -1281,8 +1338,8 @@ impl ExchangeServicePerpetual {
                 "/v5/position/trading-stop",
                 Some(json!({
                     "category": "linear",
-                    "symbol": ticker,
-                    "takeProfit":  trigger_price,
+                    "symbol": take_profit_order.ticker,
+                    "takeProfit":  take_profit_order.take_profit_price,
                     "tpSize": qty.to_string(),
                     "positionIdx": positions_idx,
                     "tpslMode": "Partial",

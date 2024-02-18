@@ -69,3 +69,14 @@ pub struct ConditionalOrderRemoval {
     /// A new stop.
     pub trigger_price: Decimal,
 } // end struct StopLossAdjustment
+
+/// This structure represents a take profit placement.
+#[derive(Deserialize, Debug, Clone)]
+pub struct TakeProfitPlacement {
+    /// A ticker of the asset.
+    pub ticker: String,
+    /// A take profit price.
+    pub take_profit: Decimal,
+    /// A take profit percentage.
+    pub take_profit_percentage: Decimal,
+} // end struct TakeProfitPlacement
