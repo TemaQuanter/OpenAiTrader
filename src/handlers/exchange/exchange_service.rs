@@ -14,7 +14,11 @@ use tokio::task::JoinHandle;
 use crate::{
     db_objects::{status_model::StatusId, user_model::User},
     handlers::bot::bot_service::BotState,
-    utils::{app_error::AppError, database_service::DatabaseService},
+    utils::{
+        app_error::AppError, database_service::DatabaseService,
+        lazy_static::DELAY_BETWEEN_UNSUCCESSFUL_REQUESTS,
+        types_and_constants::NUMBER_ATTEMPTS_SEND_REQUEST,
+    },
 };
 
 /// This struct contains all the functionality to interact
@@ -306,4 +310,106 @@ impl ExchangeService {
             .parse::<i32>()
             .unwrap())
     } // end fn get_api_deadline_days
+
+    /// This function allows sending a GET request to the exchange multiple times if it fails.
+    pub async fn send_robust_get_request(
+        client: &Client,
+        url: &str,
+        get_request: &[(&str, &str)],
+    ) -> Result<serde_json::Value, AppError> {
+        // Initialize the response.
+        let mut response: Option<serde_json::Value> = None;
+
+        // Try to send the request several times if it is not sent successfully.
+        for i in 0..NUMBER_ATTEMPTS_SEND_REQUEST {
+            // Try to send a request for the first time.
+            let res: Result<serde_json::Value, _> = client
+                .get(
+                    url,
+                    Some(get_request),
+                    [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+                )
+                .await;
+
+            // If the request sending failed, wait for some time and try again.
+            if res.is_err() {
+                // Check if it was the last possible request.
+                if i == NUMBER_ATTEMPTS_SEND_REQUEST - 1 {
+                    // All attempts are made, the operation failed.
+                    return Err(AppError::new(res.err().unwrap().to_string()));
+                } // end if
+
+                // Otherwise, there are still available attempts, repeat the request again.
+                tokio::time::sleep(*DELAY_BETWEEN_UNSUCCESSFUL_REQUESTS).await;
+            } else {
+                // Unwrap the successful response.
+                response = Some(res.unwrap());
+
+                // The response is received.
+                break;
+            } // end if
+        } // end for
+
+        // Check if the request was received.
+        if response.is_none() {
+            // The response was not received.
+            return Err(AppError::new("Failed to get a response"));
+        } // end if
+
+        // Safely unwrap the response.
+        let response = response.unwrap();
+
+        Ok(response)
+    } // end fn send_robust_get_request
+
+    /// This function allows sending a POST request to the exchange multiple times if it fails.
+    pub async fn send_robust_post_request(
+        client: &Client,
+        url: &str,
+        post_request: &serde_json::Value,
+    ) -> Result<serde_json::Value, AppError> {
+        // Initialize the response.
+        let mut response: Option<serde_json::Value> = None;
+
+        // Try to send the request several times if it is not sent successfully.
+        for i in 0..NUMBER_ATTEMPTS_SEND_REQUEST {
+            // Try to send a request for the first time.
+            let res: Result<serde_json::Value, _> = client
+                .post(
+                    url,
+                    Some(post_request),
+                    [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
+                )
+                .await;
+
+            // If the request sending failed, wait for some time and try again.
+            if res.is_err() {
+                // Check if it was the last possible request.
+                if i == NUMBER_ATTEMPTS_SEND_REQUEST - 1 {
+                    // All attempts are made, the operation failed.
+                    return Err(AppError::new(res.err().unwrap().to_string()));
+                } // end if
+
+                // Otherwise, there are still available attempts, repeat the request again.
+                tokio::time::sleep(*DELAY_BETWEEN_UNSUCCESSFUL_REQUESTS).await;
+            } else {
+                // Unwrap the successful response.
+                response = Some(res.unwrap());
+
+                // The response is received.
+                break;
+            } // end if
+        } // end for
+
+        // Check if the request was received.
+        if response.is_none() {
+            // The response was not received.
+            return Err(AppError::new("Failed to get a response"));
+        } // end if
+
+        // Safely unwrap the response.
+        let response = response.unwrap();
+
+        Ok(response)
+    } // end fn send_robust_post_request
 } // end impl ExchangeService

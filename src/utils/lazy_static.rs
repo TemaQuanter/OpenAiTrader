@@ -17,4 +17,7 @@ lazy_static! {
     // The custom trained model of ChatGPT for trading on spot.
     pub static ref CHAT_GPT_MODEL_SPOT: &'static str = Box::leak(CredentialSecurity::env_var("CHAT_GPT_MODEL_SPOT")
         .expect("CHAT_GPT_MODEL not found in .env").into_boxed_str());
+
+    // Delay between unsuccessful requests to the exchange.
+    pub static ref DELAY_BETWEEN_UNSUCCESSFUL_REQUESTS: tokio::time::Duration = tokio::time::Duration::from_millis(300);
 } // end lazy_static

@@ -1,12 +1,9 @@
 // This file contains all the functionality to interact with
 // Bybit cryptocurrency exchange on perpetual swaps.
 
-use std::{clone, mem::take, sync::Arc};
+use std::sync::Arc;
 
-use crypto_botters::{
-    bybit::{BybitHttpAuth, BybitOption},
-    Client,
-};
+use crypto_botters::Client;
 use serde_json::json;
 
 use rust_decimal::Decimal;
@@ -38,15 +35,13 @@ impl ExchangeServicePerpetual {
     pub async fn get_all_opened_positions(
         client: &Client,
     ) -> Result<Vec<OpenedPosition>, AppError> {
+        // Form a request and get the information about opened positions.
+        let get_request = [("category", "linear"), ("settleCoin", "USDT")];
+
         // Send a request and get the information about opened positions.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/position/list",
-                Some(&[("category", "linear"), ("settleCoin", "USDT")]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/position/list", &get_request)
+                .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -73,15 +68,13 @@ impl ExchangeServicePerpetual {
 
     /// This function returns all opened orders on perpetual swaps in USDT.
     pub async fn get_all_opened_orders(client: &Client) -> Result<Vec<OpenedOrder>, AppError> {
+        // Form a request and get the information about opened orders.
+        let get_request = [("category", "linear"), ("settleCoin", "USDT")];
+
         // Send a request and get the information about opened orders.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/order/realtime",
-                Some(&[("category", "linear"), ("settleCoin", "USDT")]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/order/realtime", &get_request)
+                .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -186,15 +179,13 @@ impl ExchangeServicePerpetual {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "linear"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/tickers",
-                Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/market/tickers", &get_request)
+                .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)?;
@@ -216,15 +207,16 @@ impl ExchangeServicePerpetual {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "linear"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/instruments-info",
-                Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/market/instruments-info",
+            &get_request,
+        )
+        .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)?;
@@ -246,15 +238,16 @@ impl ExchangeServicePerpetual {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "linear"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/instruments-info",
-                Some(&[("category", "linear"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/market/instruments-info",
+            &get_request,
+        )
+        .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)?;
@@ -502,7 +495,7 @@ impl ExchangeServicePerpetual {
         .await?;
 
         // Create the POST request for position opening.
-        let mut post_request: serde_json::Value = json!({
+        let mut post_request = json!({
             "category": "linear",
             "symbol": &position_opening.ticker,
             "side": position_opening.direction,
@@ -532,7 +525,7 @@ impl ExchangeServicePerpetual {
                 serde_json::Value::String(trigger_price.unwrap().to_string())
             }, // end if
             "tpslMode": "Full"
-        }); // end post_request
+        }); // end json!
 
         // Verify that the position is safe to open.
         // This function will generate and return an error,
@@ -586,14 +579,9 @@ impl ExchangeServicePerpetual {
         } // end if
 
         // Send a request to open a position on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(post_request),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response: serde_json::Value =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         // Check if it was a conditional order, then it is impossible to set
         // partial take profits and it is possible to exit the function right here.
@@ -745,7 +733,7 @@ impl ExchangeServicePerpetual {
         let qty_step = Self::get_quantity_step(&client, &position_increase_order.ticker).await?;
 
         // Round the quantity.
-        let extra_qty = Decimal::ceil(&(extra_qty / qty_step)) * qty_step;
+        let extra_qty = (Decimal::ceil(&(extra_qty / qty_step)) * qty_step).max(qty_step);
 
         // Check that the user has risk set.
         if user.risk.is_none() {
@@ -800,23 +788,21 @@ impl ExchangeServicePerpetual {
             return Err(AppError::new("Only Sell and Buy directions supported"));
         } // end if
 
+        // Form a request to place an order to increase the position size on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": position_increase_order.ticker,
+            "side": position_increase_order.direction,
+            "orderType": "Market",
+            "qty": extra_qty.to_string(),
+            "stopLoss": position_increase_order.new_stop.to_string(),
+            "positionIdx": position_idx,
+        }); // end json!
+
         // Place an order to increase the position size on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": position_increase_order.ticker,
-                    "side": position_increase_order.direction,
-                    "orderType": "Market",
-                    "qty": extra_qty.to_string(),
-                    "stopLoss": position_increase_order.new_stop.to_string(),
-                    "positionIdx": position_idx,
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)
@@ -895,23 +881,21 @@ impl ExchangeServicePerpetual {
         // If the quantity to fix is less, than the quantity step, then make it equal to quantity step.
         let qty = (Decimal::floor(&(qty / quantity_step)) * quantity_step).max(quantity_step);
 
+        // Form a request to adjust the position size on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": position_closure.ticker,
+            "side": closure_side,
+            "orderType": "Market",
+            "qty": qty.to_string(),
+            "reduceOnly": true,
+            "positionIdx": position_idx
+        }); // end json!
+
         // Send a request to adjust the position size on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": position_closure.ticker,
-                    "side": closure_side,
-                    "orderType": "Market",
-                    "qty": qty.to_string(),
-                    "reduceOnly": true,
-                    "positionIdx": position_idx
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn close_part_of_position
@@ -1051,20 +1035,18 @@ impl ExchangeServicePerpetual {
         // Safely unwrap the order.
         let cur_order = cur_order.unwrap();
 
+        // Form a request to adjust a stop loss of the order on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": stop_loss_adjustment.ticker,
+            "orderId": cur_order.order_id,
+            "triggerPrice": stop_loss_adjustment.new_stop.to_string()
+        }); // end json!
+
         // Send a request to adjust a stop loss of the order on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/amend",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": stop_loss_adjustment.ticker,
-                    "orderId": cur_order.order_id,
-                    "triggerPrice": stop_loss_adjustment.new_stop.to_string()
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/amend", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn adjust_stop_loss
@@ -1095,20 +1077,21 @@ impl ExchangeServicePerpetual {
             return Err(AppError::new("The direction is provided incorrectly"));
         } // end if
 
+        // Form a request to adjust a leverage on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": ticker,
+            "buyLeverage": long_position_leverage.to_string(),
+            "sellLeverage": short_position_leverage.to_string(),
+        }); // end json!
+
         // Send a request to adjust a leverage on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/position/set-leverage",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": ticker,
-                    "buyLeverage": long_position_leverage.to_string(),
-                    "sellLeverage": short_position_leverage.to_string(),
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_post_request(
+            client,
+            "/v5/position/set-leverage",
+            &post_request,
+        )
+        .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn set_leverage
@@ -1122,15 +1105,13 @@ impl ExchangeServicePerpetual {
         client: &Client,
         ticker: &String,
     ) -> Result<(Decimal, Decimal), AppError> {
+        // Form a request to get a position leverage on perpetual swaps.
+        let get_request = [("category", "linear"), ("symbol", ticker)];
+
         // Send a request to get a position leverage on perpetual swaps.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/position/list",
-                Some(&[("category", "linear"), ("symbol", ticker)]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/position/list", &get_request)
+                .await?;
 
         // Retrieve the leverage for long position.
         let long_position_leverage = response["result"]["list"][0]["leverage"]
@@ -1150,19 +1131,20 @@ impl ExchangeServicePerpetual {
 
     /// This function sets a position in a hedge-mode.
     pub async fn set_hedge_mode(client: &Client, ticker: &String) -> Result<(), AppError> {
+        // Form a request to set a position in a hedge-mode on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": ticker,
+            "mode": 3
+        }); // end json!
+
         // Send a request to set a position in a hedge-mode on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/position/switch-mode",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": ticker,
-                    "mode": 3
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_post_request(
+            client,
+            "/v5/position/switch-mode",
+            &post_request,
+        )
+        .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn set_hedge_mode
@@ -1227,19 +1209,17 @@ impl ExchangeServicePerpetual {
         // Safely unwrap the order.
         let order = order.unwrap();
 
+        // Form a request to cancel an order on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": order.ticker,
+            "orderId": order.order_id
+        }); // end json!
+
         // Send a request to cancel an order on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/cancel",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": order.ticker,
-                    "orderId": order.order_id
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/cancel", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn cancel_order
@@ -1292,7 +1272,7 @@ impl ExchangeServicePerpetual {
         } // end if
 
         // Get all opened positions on perpetual swaps.
-        let opened_positions = ExchangeServicePerpetual::get_all_opened_positions(&client).await?;
+        let opened_positions = Self::get_all_opened_positions(&client).await?;
 
         // The position searched for.
         let mut cur_position: Option<OpenedPosition> = None;
@@ -1323,31 +1303,31 @@ impl ExchangeServicePerpetual {
         let cur_position = cur_position.unwrap();
 
         // Get the quantity step of the contract.
-        let qty_step =
-            ExchangeServicePerpetual::get_quantity_step(&client, &take_profit_order.ticker).await?;
+        let qty_step = Self::get_quantity_step(&client, &take_profit_order.ticker).await?;
 
         // Calculate the quantity to fix.
         let qty = cur_position.qty * (take_profit_order.take_profit_percentage / dec!(100));
 
         // Adjust the quantity with regard to quantity step of the contract.
-        let qty = Decimal::floor(&(qty / qty_step)) * qty_step;
+        let qty = (Decimal::floor(&(qty / qty_step)) * qty_step).max(qty_step);
+
+        // Form a request to place a partial take profit order on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": take_profit_order.ticker,
+            "takeProfit":  take_profit_order.take_profit_price,
+            "tpSize": qty.to_string(),
+            "positionIdx": positions_idx,
+            "tpslMode": "Partial",
+        }); // end json!
 
         // Send a request to place a partial take profit order on perpetual swaps.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/position/trading-stop",
-                Some(json!({
-                    "category": "linear",
-                    "symbol": take_profit_order.ticker,
-                    "takeProfit":  take_profit_order.take_profit_price,
-                    "tpSize": qty.to_string(),
-                    "positionIdx": positions_idx,
-                    "tpslMode": "Partial",
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_post_request(
+            &client,
+            "/v5/position/trading-stop",
+            &post_request,
+        )
+        .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order

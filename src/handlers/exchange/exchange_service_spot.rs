@@ -3,10 +3,7 @@
 
 use std::sync::Arc;
 
-use crypto_botters::{
-    bybit::{BybitHttpAuth, BybitOption},
-    Client,
-};
+use crypto_botters::Client;
 use serde_json::json;
 
 use rust_decimal::Decimal;
@@ -17,7 +14,7 @@ use crate::{
     handlers::{
         bot::dto_spot::{
             ConditionalOrderRemoval, PositionClosure, PositionIncrease, PositionOpening,
-            StopLossAdjustment,
+            StopLossAdjustment, TakeProfitPlacement,
         },
         exchange::dto_spot::OpenedOrder,
     },
@@ -38,15 +35,16 @@ impl ExchangeServiceSpot {
     pub async fn _get_all_opened_positions(
         client: &Client,
     ) -> Result<Vec<OpenedPosition>, AppError> {
+        // Form a request and get the information about opened positions.
+        let get_request = [("accountType", "UNIFIED")];
+
         // Send a request and get the information about opened positions.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/asset/transfer/query-account-coins-balance",
-                Some(&[("accountType", "UNIFIED")]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/asset/transfer/query-account-coins-balance",
+            &get_request,
+        )
+        .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -78,14 +76,15 @@ impl ExchangeServiceSpot {
         coin: impl AsRef<str>,
     ) -> Result<OpenedPosition, AppError> {
         // Send a request and get the information about opened positions.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/asset/transfer/query-account-coins-balance",
-                Some(&[("accountType", "UNIFIED"), ("coin", coin.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let get_request = [("accountType", "UNIFIED"), ("coin", coin.as_ref())];
+
+        // Send a request and get the information about opened positions.
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/asset/transfer/query-account-coins-balance",
+            &get_request,
+        )
+        .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -114,15 +113,13 @@ impl ExchangeServiceSpot {
 
     /// This function returns all opened orders on spot in USDT.
     pub async fn get_all_opened_orders(client: &Client) -> Result<Vec<OpenedOrder>, AppError> {
+        // Form a request and get the information about opened orders.
+        let get_request = [("category", "spot")];
+
         // Send a request and get the information about opened orders.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/order/realtime",
-                Some(&[("category", "spot")]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/order/realtime", &get_request)
+                .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -206,15 +203,13 @@ impl ExchangeServiceSpot {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "spot"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/tickers",
-                Some(&[("category", "spot"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_get_request(client, "/v5/market/tickers", &get_request)
+                .await?;
 
         // Validate exchange response.
         ExchangeService::validate_exchange_response(&response)?;
@@ -236,15 +231,16 @@ impl ExchangeServiceSpot {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "spot"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/instruments-info",
-                Some(&[("category", "spot"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/market/instruments-info",
+            &get_request,
+        )
+        .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)?;
@@ -266,15 +262,16 @@ impl ExchangeServiceSpot {
         client: &Client,
         ticker: impl AsRef<str>,
     ) -> Result<Decimal, AppError> {
+        // Form a request and get the information about an instrument.
+        let get_request = [("category", "spot"), ("symbol", ticker.as_ref())];
+
         // Send a request and get the information about an instrument.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/market/instruments-info",
-                Some(&[("category", "spot"), ("symbol", ticker.as_ref())]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response = ExchangeService::send_robust_get_request(
+            client,
+            "/v5/market/instruments-info",
+            &get_request,
+        )
+        .await?;
 
         // Validate the response from exchange.
         ExchangeService::validate_exchange_response(&response)?;
@@ -435,7 +432,8 @@ impl ExchangeServiceSpot {
             .map_err(|error| AppError::new(error.to_string()))?;
 
         // Adjust the quantity according to the quantity step.
-        let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
+        let qty =
+            (Decimal::floor(&(qty / quantity_step)) * quantity_step).max(quantity_step.to_owned());
 
         // Create the POST request for position opening.
         let post_request: serde_json::Value = json!({
@@ -474,17 +472,10 @@ impl ExchangeServiceSpot {
         // if it is unsafe to open a position.
         Self::verify_position(&position_opening).await?;
 
-        // Try to unwrap take profit boundaries.
-
         // Send a request to open a position on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(post_request),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         // Check if it was a conditional order, then it is impossible to set
         // partial take profits and it is possible to exit the function right here.
@@ -661,25 +652,23 @@ impl ExchangeServiceSpot {
         let qty_step = Self::get_quantity_step(&client, &position_increase_order.ticker).await?;
 
         // Round the quantity.
-        let extra_qty = Decimal::floor(&(extra_qty / qty_step)) * qty_step;
+        let extra_qty = (Decimal::floor(&(extra_qty / qty_step)) * qty_step).max(qty_step);
+
+        // Form an order to increase the position size on spot.
+        let post_request = json!({
+            "category": "spot",
+            "symbol": position_increase_order.ticker,
+            "side": "Buy",
+            "orderType": "Market",
+            "qty": extra_qty.to_string(),
+            "orderFilter": "Order",
+            "marketUnit": "baseCoin"
+        }); // end json!
 
         // Place an order to increase the position size on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(json!({
-                    "category": "spot",
-                    "symbol": position_increase_order.ticker,
-                    "side": "Buy",
-                    "orderType": "Market",
-                    "qty": extra_qty.to_string(),
-                    "orderFilter": "Order",
-                    "marketUnit": "baseCoin"
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         // Get the response from exchange.
         let res = ExchangeService::validate_exchange_response(&response);
@@ -754,7 +743,7 @@ impl ExchangeServiceSpot {
             opened_position.wallet_balance * (position_closure.percentage_to_close / dec!(100.0));
 
         // Adjust the quantity so to fit the quantity step restrictions.
-        let qty = Decimal::floor(&(qty / quantity_step)) * quantity_step;
+        let qty = (Decimal::floor(&(qty / quantity_step)) * quantity_step).max(quantity_step);
 
         // Decrease the amount of stop loss (stop loss orders allocate coins, so it is
         // impossible to do anything with them).
@@ -785,19 +774,20 @@ impl ExchangeServiceSpot {
 
             // Check if it necessary to close the position entirely.
             if position_closure.percentage_to_close == dec!(100) {
-                // Remove the order.
-                let response: serde_json::Value = client
-                    .post(
-                        "/v5/order/cancel",
-                        Some(json!({
-                            "category": "spot",
-                            "symbol": position_closure.ticker,
-                            "orderId": cur_order.order_id
-                        })),
-                        [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-                    )
-                    .await
-                    .map_err(|error| AppError::new(error.to_string()))?;
+                // Form a request to remove the order.
+                let post_request = json!({
+                    "category": "spot",
+                    "symbol": position_closure.ticker,
+                    "orderId": cur_order.order_id
+                }); // end json!
+
+                // Send a request to remove the order.
+                let response = ExchangeService::send_robust_post_request(
+                    &client,
+                    "/v5/order/cancel",
+                    &post_request,
+                )
+                .await?;
 
                 // Get the response from exchange.
                 let res = ExchangeService::validate_exchange_response(&response);
@@ -807,20 +797,21 @@ impl ExchangeServiceSpot {
                     return Err(res.unwrap_err());
                 } // end if
             } else {
-                // Amend the order.
-                let response: serde_json::Value = client
-                    .post(
-                        "/v5/order/amend",
-                        Some(json!({
-                            "category": "spot",
-                            "symbol": position_closure.ticker,
-                            "orderId": cur_order.order_id,
-                            "qty": cur_order.qty - qty
-                        })),
-                        [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-                    )
-                    .await
-                    .map_err(|error| AppError::new(error.to_string()))?;
+                // Form a request to amend the order.
+                let post_request = json!({
+                    "category": "spot",
+                    "symbol": position_closure.ticker,
+                    "orderId": cur_order.order_id,
+                    "qty": cur_order.qty - qty
+                }); // end json!
+
+                // Send a request to amend the order.
+                let response = ExchangeService::send_robust_post_request(
+                    &client,
+                    "/v5/order/amend",
+                    &post_request,
+                )
+                .await?;
 
                 // Get the response from exchange.
                 let res = ExchangeService::validate_exchange_response(&response);
@@ -832,23 +823,21 @@ impl ExchangeServiceSpot {
             } // end if
         } // end if
 
+        // Form a request to adjust the position size on spot.
+        let post_request = json!({
+            "category": "spot",
+            "symbol": position_closure.ticker,
+            "side": "Sell",
+            "orderType": "Market",
+            "qty": qty.to_string(),
+            "orderFilter": "Order",
+            "marketUnit": "baseCoin"
+        }); // end json!
+
         // Send a request to adjust the position size on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(json!({
-                    "category": "spot",
-                    "symbol": position_closure.ticker,
-                    "side": "Sell",
-                    "orderType": "Market",
-                    "qty": qty.to_string(),
-                    "orderFilter": "Order",
-                    "marketUnit": "baseCoin"
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn close_part_of_position
@@ -916,8 +905,9 @@ impl ExchangeServiceSpot {
             .map_err(|error| AppError::new(error.to_string()))?;
 
         // Adjust the quantity according to the quantity step.
-        let qty =
-            Decimal::floor(&(&opened_position.wallet_balance / quantity_step)) * quantity_step;
+        let qty = (Decimal::floor(&(&opened_position.wallet_balance / quantity_step))
+            * quantity_step)
+            .max(quantity_step.to_owned());
 
         // If the order was not found, neither stop loss price was provided,
         // then just finish function execution.
@@ -927,23 +917,25 @@ impl ExchangeServiceSpot {
 
         // If the order was not found, set it up.
         if cur_order.is_none() && stop_loss_adjustment.new_stop.is_some() {
-            let response: serde_json::Value = client
-                .post(
-                    "/v5/order/create",
-                    Some(json!({
-                        "category": "spot",
-                        "qty": qty.to_string(),
-                        "orderType": "Market",
-                        "side": "Sell",
-                        "symbol": stop_loss_adjustment.ticker,
-                        "triggerPrice": stop_loss_adjustment.new_stop.unwrap().to_string(),
-                        "orderFilter": "tpslOrder",
-                        "marketUnit": "baseCoin"
-                    })),
-                    [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-                )
-                .await
-                .map_err(|error| AppError::new(error.to_string()))?;
+            // Form a request to set up the order.
+            let post_request = json!({
+                "category": "spot",
+                "qty": qty.to_string(),
+                "orderType": "Market",
+                "side": "Sell",
+                "symbol": stop_loss_adjustment.ticker,
+                "triggerPrice": stop_loss_adjustment.new_stop.unwrap().to_string(),
+                "orderFilter": "tpslOrder",
+                "marketUnit": "baseCoin"
+            }); // end json!
+
+            // Send a request to set up the order.
+            let response = ExchangeService::send_robust_post_request(
+                &client,
+                "/v5/order/create",
+                &post_request,
+            )
+            .await?;
 
             return ExchangeService::validate_exchange_response(&response);
         } // end if
@@ -966,14 +958,9 @@ impl ExchangeServiceSpot {
         } // end if
 
         // Send a request to adjust a stop loss of the order on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/amend",
-                Some(post_request),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/amend", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn adjust_stop_loss
@@ -1020,19 +1007,17 @@ impl ExchangeServiceSpot {
         // Safely unwrap the order.
         let order = order.unwrap();
 
+        // Form a request to cancel an order on spot.
+        let post_request = json!({
+            "category": "spot",
+            "symbol": order.ticker,
+            "orderId": order.order_id
+        }); // end json!
+
         // Send a request to cancel an order on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/cancel",
-                Some(json!({
-                    "category": "spot",
-                    "symbol": order.ticker,
-                    "orderId": order.order_id
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/cancel", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn cancel_order
@@ -1057,30 +1042,61 @@ impl ExchangeServiceSpot {
     } // end fn verify_position
 
     /// This function places a partial take profit order.
-    pub async fn _place_partial_take_profit_order(
-        client: &Client,
-        ticker: &String,
-        trigger_price: String,
-        qty: String,
+    pub async fn place_partial_take_profit_order(
+        take_profit_order: Arc<TakeProfitPlacement>,
+        user: User,
     ) -> Result<(), AppError> {
+        // Get user credentials.
+        let api_key = user.exchange_api_key.unwrap();
+        let api_secret = user.exchange_api_secret.unwrap();
+
+        // Get an exchange client.
+        let client = ExchangeService::get_client(api_key, api_secret);
+
+        // Retrieve a coin from the ticker.
+        let coin = take_profit_order.ticker.strip_suffix("USDT");
+
+        // Check that the coin was extracted successfully.
+        if coin.is_none() {
+            // There was an error while extracting the coin.
+            return Err(AppError::new(format!(
+                "Failed to extract a coin from \"{}\"",
+                take_profit_order.ticker
+            ))); // end return
+        } // end if
+
+        // Safely unwrap the coin.
+        let coin = coin.unwrap();
+
+        // Get the position to set a take profit for.
+        let opened_position = Self::get_opened_position(&client, coin).await?;
+
+        // Get the quantity to fix.
+        let qty =
+            opened_position.wallet_balance * (take_profit_order.take_profit_percentage / dec!(100));
+
+        // Get the quantity step of the asset.
+        let qty_step = Self::get_quantity_step(&client, &take_profit_order.ticker).await?;
+
+        // Adjust the volume to fix in accordance with the quantity step.
+        let qty = (Decimal::floor(&(qty / qty_step)) * qty_step).max(qty_step);
+
+        // Form a request to place a partial take profit order on spot.
+        let post_request = json!({
+            "category": "spot",
+            "side": "Sell",
+            "orderType": "Market",
+            "symbol": take_profit_order.ticker,
+            "triggerPrice":  take_profit_order.take_profit.to_string(),
+            "qty": qty.to_string(),
+            "orderFilter": "StopOrder",
+            "marketUnit": "baseCoin"
+        }); // end json!
+
         // Send a request to place a partial take profit order on spot.
-        let response: serde_json::Value = client
-            .post(
-                "/v5/order/create",
-                Some(json!({
-                    "category": "spot",
-                    "side": "Sell",
-                    "orderType": "Market",
-                    "symbol": ticker,
-                    "triggerPrice":  trigger_price,
-                    "qty": qty,
-                    "orderFilter": "StopOrder",
-                    "marketUnit": "baseCoin"
-                })),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response =
+            ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
+                .await?;
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order

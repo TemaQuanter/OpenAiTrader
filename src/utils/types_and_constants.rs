@@ -25,3 +25,6 @@ pub const SERVER_ADDRESS: &str = "0.0.0.0:8080";
 
 // Path to the bot manual.
 pub const PATH_TO_BOT_MANUAL: &str = "data/commands_description.json";
+
+// Number attempts to send a request to the exchange.
+pub const NUMBER_ATTEMPTS_SEND_REQUEST: i32 = 3;

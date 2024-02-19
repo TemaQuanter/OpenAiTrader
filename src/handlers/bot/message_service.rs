@@ -229,6 +229,18 @@ impl MessageService {
         // Get the first message of the trade legend.
         let first_message = trade_legend.last().unwrap();
 
+        // Get the last message of the trade legend.
+        let last_message = trade_legend.first().unwrap();
+
+        // Separately check whether the last message in the legend is a spot order.
+        // Check if the last inserted message is a signal on spot.
+        if Self::is_spot_signal(last_message) {
+            // Convert the legend to string.
+            let trade_legend = Self::convert_legend_to_string(trade_legend);
+            // It is most likely to be a signal.
+            return Ok((Some(trade_legend), "spot".to_string()));
+        } // end if
+
         // Check if the last inserted message is a signal on perpetual swaps.
         if Self::is_perpetual_signal(first_message) {
             // Convert the legend to string.
@@ -765,6 +777,22 @@ impl MessageService {
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(stop_loss_adjustment),
                     ExchangeServiceSpot::adjust_stop_loss,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(take_profit_placement) =
+            serde_json::from_str::<dto_spot::TakeProfitPlacement>(&signal)
+        {
+            // This is a take profit placement signal.
+            // Set a take profit for the position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(take_profit_placement),
+                    ExchangeServiceSpot::place_partial_take_profit_order,
                     bot_state.clone(),
                 )
                 .await,
