@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import base64
 
 # Path to the dataset to train the model on.
-DATASET_PATH = "datasets/spot/dataset_spot_v5.jsonl"
+DATASET_PATH = "datasets/perpetual/dataset_v6_perpetual.jsonl"
 
 # Import environmental variables from .env file into the module.
 load_dotenv()
