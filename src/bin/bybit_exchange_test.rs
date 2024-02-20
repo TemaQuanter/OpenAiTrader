@@ -4,8 +4,10 @@ use rust_decimal_macros::dec;
 use trading_bot::{
     db_objects::user_model::User,
     handlers::{
-        bot::dto_perpetual,
-        bot::dto_spot,
+        bot::{
+            dto_perpetual,
+            dto_spot::{self, TakeProfitPlacement},
+        },
         exchange::{
             exchange_service::ExchangeService,
             exchange_service_perpetual::ExchangeServicePerpetual,
@@ -62,6 +64,13 @@ async fn main() {
     //         .await
     //         .unwrap()
     // );
+
+    println!(
+        "{:#?}",
+        ExchangeServiceSpot::get_all_opened_orders(&client)
+            .await
+            .unwrap()
+    );
 
     // println!(
     //     "{:#?}",
@@ -164,11 +173,13 @@ async fn main() {
 
     // println!(
     //     "{:#?}",
-    //     ExchangeServiceSpot::_place_partial_take_profit_order(
-    //         &client,
-    //         &"UNIUSDT".to_string(),
-    //         "8".to_string(),
-    //         "10".to_string()
+    //     ExchangeServiceSpot::place_partial_take_profit_order(
+    //         Arc::new(TakeProfitPlacement {
+    //             ticker: "GRTUSDT".to_string(),
+    //             take_profit_price: dec!(0.5),
+    //             take_profit_percentage: dec!(100)
+    //         }),
+    //         test_user
     //     )
     //     .await
     // )

@@ -477,6 +477,9 @@ impl ExchangeServiceSpot {
             ExchangeService::send_robust_post_request(&client, "/v5/order/create", &post_request)
                 .await?;
 
+        // Validate the response.
+        ExchangeService::validate_exchange_response(&response)?;
+
         // Check if it was a conditional order, then it is impossible to set
         // partial take profits and it is possible to exit the function right here.
         if position_opening.order_type == "conditional" {
@@ -754,34 +757,71 @@ impl ExchangeServiceSpot {
         // An order that it is required to adjust a stop loss of.
         let mut cur_order: Option<OpenedOrder> = None;
 
+        // All take profits for the particular position if it is necessary to close the position entirely.
+        let mut take_profits: Vec<OpenedOrder> = Vec::new();
+
         // Get only one order (full stop loss of the required coin).
         for opened_order in opened_orders {
             // Check if current order is the order that is searched for.
             if opened_order.ticker == position_closure.ticker
                 && opened_order.side == "Sell"
-                && opened_order.stop_order_type == "tpslOrder"
+                && opened_order.stop_order_type == "Stop"
                 && opened_order.trigger_price < cur_coin_price
             {
                 // This is the required order.
                 cur_order = Some(opened_order);
-                break;
+            } else if opened_order.ticker == position_closure.ticker
+                && opened_order.side == "Sell"
+                && opened_order.stop_order_type == "Stop"
+            {
+                // This is one of the take profits for the position.
+                take_profits.push(opened_order);
             } // end if
         } // end for
 
-        // If the order was found, reduce the amount of it.
+        // Close all take profits if the position is being closed entirely.
+        if position_closure.percentage_to_close == dec!(100) {
+            // Traverse all take profits and cancel them.
+            for take_profit in take_profits {
+                // Form a request to remove the stop loss order.
+                let post_request = json!({
+                    "category": "spot",
+                    "symbol": position_closure.ticker,
+                    "orderId": take_profit.order_id
+                }); // end json!
+
+                // Send a request to remove the stop loss order.
+                let response = ExchangeService::send_robust_post_request(
+                    &client,
+                    "/v5/order/cancel",
+                    &post_request,
+                )
+                .await?;
+
+                // Get the response from exchange.
+                let res = ExchangeService::validate_exchange_response(&response);
+
+                // If there was an error, stop function execution.
+                if res.is_err() {
+                    return Err(res.unwrap_err());
+                } // end if
+            } // end for
+        } // end if
+
+        // If the stop loss order was found, reduce the amount of it.
         if cur_order.is_some() {
             let cur_order = cur_order.unwrap();
 
             // Check if it necessary to close the position entirely.
             if position_closure.percentage_to_close == dec!(100) {
-                // Form a request to remove the order.
+                // Form a request to remove the stop loss order.
                 let post_request = json!({
                     "category": "spot",
                     "symbol": position_closure.ticker,
                     "orderId": cur_order.order_id
                 }); // end json!
 
-                // Send a request to remove the order.
+                // Send a request to remove the stop loss order.
                 let response = ExchangeService::send_robust_post_request(
                     &client,
                     "/v5/order/cancel",
@@ -890,7 +930,7 @@ impl ExchangeServiceSpot {
             // Check if current order is the order that is searched for.
             if opened_order.ticker == stop_loss_adjustment.ticker
                 && opened_order.side == "Sell"
-                && opened_order.stop_order_type == "tpslOrder"
+                && opened_order.stop_order_type == "Stop"
                 && opened_order.trigger_price < cur_coin_price
             {
                 // This is the required order.
@@ -925,7 +965,7 @@ impl ExchangeServiceSpot {
                 "side": "Sell",
                 "symbol": stop_loss_adjustment.ticker,
                 "triggerPrice": stop_loss_adjustment.new_stop.unwrap().to_string(),
-                "orderFilter": "tpslOrder",
+                "orderFilter": "StopOrder",
                 "marketUnit": "baseCoin"
             }); // end json!
 
@@ -1087,7 +1127,7 @@ impl ExchangeServiceSpot {
             "side": "Sell",
             "orderType": "Market",
             "symbol": take_profit_order.ticker,
-            "triggerPrice":  take_profit_order.take_profit.to_string(),
+            "triggerPrice":  take_profit_order.take_profit_price.to_string(),
             "qty": qty.to_string(),
             "orderFilter": "StopOrder",
             "marketUnit": "baseCoin"

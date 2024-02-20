@@ -609,6 +609,22 @@ impl MessageService {
                 &bot_state,
             )
             .await;
+        } else if let Ok(take_profit_placement) =
+            serde_json::from_str::<dto_perpetual::TakeProfitPlacement>(&signal)
+        {
+            // This is a take profit placement signal.
+            // Set a take profit for the position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(take_profit_placement),
+                    ExchangeServicePerpetual::place_partial_take_profit_order,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
         } else if let Ok(position_increase) =
             serde_json::from_str::<dto_perpetual::PositionIncrease>(&signal)
         {
@@ -673,22 +689,6 @@ impl MessageService {
                 &bot_state,
             )
             .await;
-        } else if let Ok(take_profit_placement) =
-            serde_json::from_str::<dto_perpetual::TakeProfitPlacement>(&signal)
-        {
-            // This is a take profit placement signal.
-            // Set a take profit for the position.
-            Self::send_exchange_order_execution_feedback(
-                ExchangeService::execute_exchange_order_for_all_users(
-                    Arc::new(take_profit_placement),
-                    ExchangeServicePerpetual::place_partial_take_profit_order,
-                    bot_state.clone(),
-                )
-                .await,
-                &bot,
-                &bot_state,
-            )
-            .await;
         } else {
             // There is nothing to do.
             // Skip the signal.
@@ -713,6 +713,22 @@ impl MessageService {
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(position_opening),
                     ExchangeServiceSpot::open_position,
+                    bot_state.clone(),
+                )
+                .await,
+                &bot,
+                &bot_state,
+            )
+            .await;
+        } else if let Ok(take_profit_placement) =
+            serde_json::from_str::<dto_spot::TakeProfitPlacement>(&signal)
+        {
+            // This is a take profit placement signal.
+            // Set a take profit for the position.
+            Self::send_exchange_order_execution_feedback(
+                ExchangeService::execute_exchange_order_for_all_users(
+                    Arc::new(take_profit_placement),
+                    ExchangeServiceSpot::place_partial_take_profit_order,
                     bot_state.clone(),
                 )
                 .await,
@@ -777,22 +793,6 @@ impl MessageService {
                 ExchangeService::execute_exchange_order_for_all_users(
                     Arc::new(stop_loss_adjustment),
                     ExchangeServiceSpot::adjust_stop_loss,
-                    bot_state.clone(),
-                )
-                .await,
-                &bot,
-                &bot_state,
-            )
-            .await;
-        } else if let Ok(take_profit_placement) =
-            serde_json::from_str::<dto_spot::TakeProfitPlacement>(&signal)
-        {
-            // This is a take profit placement signal.
-            // Set a take profit for the position.
-            Self::send_exchange_order_execution_feedback(
-                ExchangeService::execute_exchange_order_for_all_users(
-                    Arc::new(take_profit_placement),
-                    ExchangeServiceSpot::place_partial_take_profit_order,
                     bot_state.clone(),
                 )
                 .await,

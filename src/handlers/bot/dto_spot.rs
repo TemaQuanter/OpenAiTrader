@@ -76,7 +76,7 @@ pub struct TakeProfitPlacement {
     /// A ticker of the asset.
     pub ticker: String,
     /// A take profit price.
-    pub take_profit: Decimal,
+    pub take_profit_price: Decimal,
     /// A take profit percentage.
     pub take_profit_percentage: Decimal,
 } // end struct TakeProfitPlacement
