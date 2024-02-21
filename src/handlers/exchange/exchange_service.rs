@@ -221,14 +221,15 @@ impl ExchangeService {
 
                         // Inform the user about failure to execute the order.
                         let _ = BotService::inform_client(
-                            bot,
-                            tsk.0.telegram_id,
-                            format!(
-                                "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}",
-                                order_description
-                            ),
-                        )
-                        .await;
+                        bot,
+                        tsk.0.telegram_id,
+                        format!(
+                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
+                            order_description,
+                            error
+                        ),
+                    )
+                    .await;
                     } else {
                         // The result was OK.
                         positive_results += 1;
@@ -262,8 +263,9 @@ impl ExchangeService {
                         bot,
                         tsk.0.telegram_id,
                         format!(
-                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}",
-                            order_description
+                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
+                            order_description,
+                            error
                         ),
                     )
                     .await;
@@ -316,13 +318,15 @@ impl ExchangeService {
             "Null"
         }; // end if
 
-        // Add an error code to the response message.
-        let error_message =
-            error_message.to_string() + format!(" Response code: {}", response_code).as_str();
+        // Log the error.
+        log::error!(
+            "{}",
+            error_message.to_string() + format!(" Response code: {}", response_code).as_str()
+        ); // end log
 
         // Return an error with the error message received from the
         // exchange.
-        return Err(AppError::new(error_message));
+        Err(AppError::new(error_message))
     } // end fn validate_exchange_response
 
     /// This function returns the number of remaining days before API key expires.

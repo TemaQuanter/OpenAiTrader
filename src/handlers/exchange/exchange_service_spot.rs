@@ -18,7 +18,10 @@ use crate::{
         },
         exchange::dto_spot::OpenedOrder,
     },
-    utils::{app_error::AppError, types_and_constants::SPOT_OPENED_POSITION_BIAS_VALUE},
+    utils::{
+        app_error::AppError,
+        types_and_constants::{MAX_PERCENTAGE_PER_SPOT_POSITION, SPOT_OPENED_POSITION_BIAS_VALUE},
+    },
 };
 
 use super::{dto_spot::OpenedPosition, exchange_service::ExchangeService};
@@ -625,6 +628,14 @@ impl ExchangeServiceSpot {
         // Extra quantity of coins to buy.
         let extra_qty: Decimal;
 
+        // Make sure that user has a deposit set.
+        if user.deposit.is_none() {
+            return Err(AppError::new("Deposit is not set"));
+        } // end if
+
+        // Get deposit size.
+        let deposit = user.deposit.unwrap();
+
         // Calculate the quantity it is necessary to buy to increase the position size.
         // Check whether it is necessary to increase the position size based on the opened
         // position or deposit size.
@@ -633,14 +644,6 @@ impl ExchangeServiceSpot {
             extra_qty = position_to_increase.wallet_balance
                 * (position_increase_order.percentage_to_increase / dec!(100.0));
         } else if position_increase_order.percentage_from == "deposit" {
-            // Make sure that user has a deposit set.
-            if user.deposit.is_none() {
-                return Err(AppError::new("Deposit is not set"));
-            } // end if
-
-            // Get deposit size.
-            let deposit = user.deposit.unwrap();
-
             // Calculate the quantity it is necessary to buy to increase the position size.
             extra_qty = (deposit * (position_increase_order.percentage_to_increase / dec!(100.0)))
                 / cur_coin_price;
@@ -656,6 +659,16 @@ impl ExchangeServiceSpot {
 
         // Round the quantity.
         let extra_qty = (Decimal::floor(&(extra_qty / qty_step)) * qty_step).max(qty_step);
+
+        // Make sure that the total amount of coins will not exceed the maximum spot risk.
+        if (position_to_increase.wallet_balance + extra_qty) * cur_coin_price
+            > deposit * (MAX_PERCENTAGE_PER_SPOT_POSITION / dec!(100))
+        {
+            // The risk is inadequate.
+            return Err(AppError::new(
+                "The position size may go beyond the maximum allowed risk",
+            )); // end return
+        } // end if
 
         // Form an order to increase the position size on spot.
         let post_request = json!({

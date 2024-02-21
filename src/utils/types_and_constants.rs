@@ -28,3 +28,7 @@ pub const PATH_TO_BOT_MANUAL: &str = "data/commands_description.json";
 
 // Number attempts to send a request to the exchange.
 pub const NUMBER_ATTEMPTS_SEND_REQUEST: i32 = 3;
+
+// The maximum percentage from deposit that it is allowed to risk in a single spot
+// trade.
+pub const MAX_PERCENTAGE_PER_SPOT_POSITION: Decimal = dec!(6.1);
