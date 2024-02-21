@@ -9,11 +9,12 @@ use crypto_botters::{
 };
 
 use rust_decimal::Decimal;
+use teloxide::{adaptors::Throttle, Bot};
 use tokio::task::JoinHandle;
 
 use crate::{
     db_objects::{status_model::StatusId, user_model::User},
-    handlers::bot::bot_service::BotState,
+    handlers::bot::bot_service::{BotService, BotState},
     utils::{
         app_error::AppError, database_service::DatabaseService,
         lazy_static::DELAY_BETWEEN_UNSUCCESSFUL_REQUESTS,
@@ -155,9 +156,11 @@ impl ExchangeService {
     /// Element 3 - the number of tasks that were completed successfully.
     /// Element 4 - the number of tasks that failed.
     pub async fn execute_exchange_order_for_all_users<T, Out>(
+        order_description: String,
         exchange_order: Arc<T>,
         func: fn(Arc<T>, User) -> Out,
         bot_state: BotState,
+        bot: &Throttle<Bot>,
     ) -> Result<(i32, i32, i32, i32), AppError>
     where
         T: Send + Sync + 'static,
@@ -215,9 +218,31 @@ impl ExchangeService {
                             tsk.0.telegram_username.unwrap_or("None".to_string()),
                             error
                         );
+
+                        // Inform the user about failure to execute the order.
+                        let _ = BotService::inform_client(
+                            bot,
+                            tsk.0.telegram_id,
+                            format!(
+                                "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}",
+                                order_description
+                            ),
+                        )
+                        .await;
                     } else {
                         // The result was OK.
                         positive_results += 1;
+
+                        // Inform the user about the successful order execution.
+                        let _ = BotService::inform_client(
+                            bot,
+                            tsk.0.telegram_id,
+                            format!(
+                                "🟢 <b>The order is successfully executed on you account:</b>\n\n👉 {}",
+                                order_description
+                            ),
+                        )
+                        .await;
                     } // end if
                 } // end Ok
                 Err(error) => {
@@ -231,6 +256,17 @@ impl ExchangeService {
                         tsk.0.telegram_username.unwrap_or("None".to_string()),
                         error
                     );
+
+                    // Inform the user about failure to execute the order.
+                    let _ = BotService::inform_client(
+                        bot,
+                        tsk.0.telegram_id,
+                        format!(
+                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}",
+                            order_description
+                        ),
+                    )
+                    .await;
                 } // end Err
             } // end match
         } // end for

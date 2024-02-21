@@ -783,14 +783,14 @@ impl ExchangeServiceSpot {
         if position_closure.percentage_to_close == dec!(100) {
             // Traverse all take profits and cancel them.
             for take_profit in take_profits {
-                // Form a request to remove the stop loss order.
+                // Form a request to remove the take profit order.
                 let post_request = json!({
                     "category": "spot",
                     "symbol": position_closure.ticker,
                     "orderId": take_profit.order_id
                 }); // end json!
 
-                // Send a request to remove the stop loss order.
+                // Send a request to remove the take profit order.
                 let response = ExchangeService::send_robust_post_request(
                     &client,
                     "/v5/order/cancel",

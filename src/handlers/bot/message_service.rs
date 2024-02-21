@@ -600,9 +600,14 @@ impl MessageService {
             // Open a new position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Open <b>{}</b> position on perpetual swaps for <b>{}</b>",
+                        position_opening.direction, position_opening.ticker
+                    ),
                     Arc::new(position_opening),
                     ExchangeServicePerpetual::open_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -616,9 +621,14 @@ impl MessageService {
             // Set a take profit for the position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Set a take profit for <b>{}</b> on <b>{}</b>",
+                        take_profit_placement.direction, take_profit_placement.ticker
+                    ),
                     Arc::new(take_profit_placement),
                     ExchangeServicePerpetual::place_partial_take_profit_order,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -632,9 +642,14 @@ impl MessageService {
             // Increase the position size.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Increase a <b>{}</b> position size for <b>{}</b>",
+                        position_increase.direction, position_increase.ticker
+                    ),
                     Arc::new(position_increase),
                     ExchangeServicePerpetual::increase_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -648,9 +663,14 @@ impl MessageService {
             // Remove the opened order on perpetual swaps.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Remove order for <b>{}</b> position on <b>{}</b>",
+                        order_removal.direction, order_removal.ticker
+                    ),
                     Arc::new(order_removal),
                     ExchangeServicePerpetual::cancel_order,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -664,9 +684,16 @@ impl MessageService {
             // Close a part of the position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Close <b>{}%</b> of <b>{}</b> position for <b>{}</b>",
+                        position_closure.percentage_to_close,
+                        position_closure.direction,
+                        position_closure.ticker
+                    ),
                     Arc::new(position_closure),
                     ExchangeServicePerpetual::close_part_of_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -680,9 +707,14 @@ impl MessageService {
             // Adjust stop loss of a position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Adjust stop loss for <b>{}</b> position on <b>{}</b>",
+                        stop_loss_adjustment.direction, stop_loss_adjustment.ticker
+                    ),
                     Arc::new(stop_loss_adjustment),
                     ExchangeServicePerpetual::adjust_stop_loss,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -711,9 +743,14 @@ impl MessageService {
             // Open a new position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Open a new spot position on <b>{}</b>",
+                        position_opening.ticker
+                    ),
                     Arc::new(position_opening),
                     ExchangeServiceSpot::open_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -727,9 +764,14 @@ impl MessageService {
             // Set a take profit for the position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Set a take profit on spot for <b>{}</b>",
+                        take_profit_placement.ticker
+                    ),
                     Arc::new(take_profit_placement),
                     ExchangeServiceSpot::place_partial_take_profit_order,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -743,9 +785,14 @@ impl MessageService {
             // Increase the position size.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Increase position on spot for <b>{}</b>",
+                        position_increase.ticker
+                    ),
                     Arc::new(position_increase),
                     ExchangeServiceSpot::increase_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -759,9 +806,14 @@ impl MessageService {
             // Remove the opened order on spot.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Remover an order on spot for <b>{}</b>",
+                        order_removal.ticker
+                    ),
                     Arc::new(order_removal),
                     ExchangeServiceSpot::cancel_order,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -775,9 +827,14 @@ impl MessageService {
             // Close a part of the position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Close <b>{}%</b> of spot position for <b>{}</b>",
+                        position_closure.percentage_to_close, position_closure.ticker
+                    ),
                     Arc::new(position_closure),
                     ExchangeServiceSpot::close_part_of_position,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
@@ -791,9 +848,14 @@ impl MessageService {
             // Adjust stop loss of a position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
+                    format!(
+                        "Adjust stop loss for <b>{}</b> on spot",
+                        stop_loss_adjustment.ticker
+                    ),
                     Arc::new(stop_loss_adjustment),
                     ExchangeServiceSpot::adjust_stop_loss,
                     bot_state.clone(),
+                    bot,
                 )
                 .await,
                 &bot,
