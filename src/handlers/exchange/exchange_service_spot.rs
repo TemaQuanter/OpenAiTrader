@@ -20,7 +20,7 @@ use crate::{
     },
     utils::{
         app_error::AppError,
-        types_and_constants::{MAX_PERCENTAGE_PER_SPOT_POSITION, SPOT_OPENED_POSITION_BIAS_VALUE},
+        types_and_constants::{MAX_SPOT_POSITION_SIZE_CHANGE, SPOT_OPENED_POSITION_BIAS_VALUE},
     },
 };
 
@@ -583,7 +583,7 @@ impl ExchangeServiceSpot {
         // Check if position to increase is not greater than an adequate value.
         if position_increase_order.percentage_to_increase > dec!(300)
             && position_increase_order.percentage_from == "position"
-            || position_increase_order.percentage_to_increase > dec!(5)
+            || position_increase_order.percentage_to_increase > MAX_SPOT_POSITION_SIZE_CHANGE
                 && position_increase_order.percentage_from == "deposit"
         {
             return Err(AppError::new("Inadequate risk"));
@@ -660,13 +660,11 @@ impl ExchangeServiceSpot {
         // Round the quantity.
         let extra_qty = (Decimal::floor(&(extra_qty / qty_step)) * qty_step).max(qty_step);
 
-        // Make sure that the total amount of coins will not exceed the maximum spot risk.
-        if (position_to_increase.wallet_balance + extra_qty) * cur_coin_price
-            > deposit * (MAX_PERCENTAGE_PER_SPOT_POSITION / dec!(100))
-        {
+        // Make sure that the value of coins to buy does not exceed the maximum risk limit per spot trade.
+        if extra_qty * cur_coin_price > deposit * (MAX_SPOT_POSITION_SIZE_CHANGE / dec!(100)) {
             // The risk is inadequate.
             return Err(AppError::new(
-                "The position size may go beyond the maximum allowed risk",
+                "The maximum risk per spot trade may be exceeded",
             )); // end return
         } // end if
 
@@ -748,6 +746,28 @@ impl ExchangeServiceSpot {
         // Check if there is anything to close.
         if opened_position.wallet_balance * cur_coin_price < SPOT_OPENED_POSITION_BIAS_VALUE {
             return Err(AppError::new("Position to close is not found"));
+        } // end if
+
+        // Try to get user's deposit.
+        if user.deposit.is_none() {
+            // The user does not have their deposit set up.
+            return Err(AppError::new("The deposit is not set up"));
+        } // end if
+
+        // Safely unwrap the deposit.
+        let deposit = user.deposit.unwrap();
+
+        // Check if it is necessary to close more than the maximum limit per sale,
+        // then reject the order (the volume for sale is not safe).
+        if opened_position.wallet_balance
+            * cur_coin_price
+            * (position_closure.percentage_to_close / dec!(100))
+            > deposit * (MAX_SPOT_POSITION_SIZE_CHANGE / dec!(100))
+        {
+            // The amount for sale exceeds the upper limit.
+            return Err(AppError::new(
+                "The amount for sale exceeds the maximum limit (order too big)",
+            )); // end return
         } // end if
 
         // Get the quantity step of the coin.
@@ -1080,14 +1100,15 @@ impl ExchangeServiceSpot {
     /// It returns True, if the position opening passed the verification.
     /// False - otherwise.
     pub async fn verify_position(position_opening: &PositionOpening) -> Result<(), AppError> {
-        // Make sure the percentage from deposit is not greater than 5%.
-        if position_opening.percentage_from_deposit > dec!(5.0)
+        // Make sure the percentage from deposit is not greater than maximum allowed risk per spot trade.
+        if position_opening.percentage_from_deposit > MAX_SPOT_POSITION_SIZE_CHANGE
             || position_opening.percentage_from_deposit < dec!(0.0)
         {
             // It is not safe to get into such a position.
-            return Err(AppError::new(
-                "The percentage from deposit must be between 0% and 5%",
-            ));
+            return Err(AppError::new(format!(
+                "The percentage from deposit must be between 0% and {}%",
+                MAX_SPOT_POSITION_SIZE_CHANGE
+            )));
         } // end if
 
         // The verification is passed, allow to proceed.

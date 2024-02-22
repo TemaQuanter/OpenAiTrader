@@ -224,7 +224,7 @@ impl ExchangeService {
                         bot,
                         tsk.0.telegram_id,
                         format!(
-                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
+                            "🔴 <b>Failed to execute the order on your account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
                             order_description,
                             error
                         ),
@@ -239,7 +239,7 @@ impl ExchangeService {
                             bot,
                             tsk.0.telegram_id,
                             format!(
-                                "🟢 <b>The order is successfully executed on you account:</b>\n\n👉 {}",
+                                "🟢 <b>The order is successfully executed on your account:</b>\n\n👉 {}",
                                 order_description
                             ),
                         )
@@ -263,7 +263,7 @@ impl ExchangeService {
                         bot,
                         tsk.0.telegram_id,
                         format!(
-                            "🔴 <b>Failed to execute the order on you account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
+                            "🔴 <b>Failed to execute the order on your account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
                             order_description,
                             error
                         ),
