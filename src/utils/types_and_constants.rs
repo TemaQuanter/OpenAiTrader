@@ -30,5 +30,9 @@ pub const PATH_TO_BOT_MANUAL: &str = "data/commands_description.json";
 pub const NUMBER_ATTEMPTS_SEND_REQUEST: i32 = 5;
 
 // The maximum percentage from deposit that it is allowed to use to
-// buy or sell on spot per trade.
-pub const MAX_SPOT_POSITION_SIZE_CHANGE: Decimal = dec!(5.1);
+// sell on spot per trade.
+pub const MAX_SPOT_POSITION_SIZE_SALE: Decimal = dec!(6.1);
+
+// The maximum percentage from deposit that it is allowed to use to
+// buy on spot per trade.
+pub const MAX_SPOT_POSITION_SIZE_PURCHASE: Decimal = dec!(3.1);

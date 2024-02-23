@@ -20,7 +20,10 @@ use crate::{
     },
     utils::{
         app_error::AppError,
-        types_and_constants::{MAX_SPOT_POSITION_SIZE_CHANGE, SPOT_OPENED_POSITION_BIAS_VALUE},
+        types_and_constants::{
+            MAX_SPOT_POSITION_SIZE_PURCHASE, MAX_SPOT_POSITION_SIZE_SALE,
+            SPOT_OPENED_POSITION_BIAS_VALUE,
+        },
     },
 };
 
@@ -583,7 +586,7 @@ impl ExchangeServiceSpot {
         // Check if position to increase is not greater than an adequate value.
         if position_increase_order.percentage_to_increase > dec!(300)
             && position_increase_order.percentage_from == "position"
-            || position_increase_order.percentage_to_increase > MAX_SPOT_POSITION_SIZE_CHANGE
+            || position_increase_order.percentage_to_increase > MAX_SPOT_POSITION_SIZE_PURCHASE
                 && position_increase_order.percentage_from == "deposit"
         {
             return Err(AppError::new("Inadequate risk"));
@@ -661,7 +664,7 @@ impl ExchangeServiceSpot {
         let extra_qty = (Decimal::floor(&(extra_qty / qty_step)) * qty_step).max(qty_step);
 
         // Make sure that the value of coins to buy does not exceed the maximum risk limit per spot trade.
-        if extra_qty * cur_coin_price > deposit * (MAX_SPOT_POSITION_SIZE_CHANGE / dec!(100)) {
+        if extra_qty * cur_coin_price > deposit * (MAX_SPOT_POSITION_SIZE_PURCHASE / dec!(100)) {
             // The risk is inadequate.
             return Err(AppError::new(
                 "The maximum risk per spot trade may be exceeded",
@@ -762,7 +765,7 @@ impl ExchangeServiceSpot {
         if opened_position.wallet_balance
             * cur_coin_price
             * (position_closure.percentage_to_close / dec!(100))
-            > deposit * (MAX_SPOT_POSITION_SIZE_CHANGE / dec!(100))
+            > deposit * (MAX_SPOT_POSITION_SIZE_SALE / dec!(100))
         {
             // The amount for sale exceeds the upper limit.
             return Err(AppError::new(
@@ -1101,13 +1104,13 @@ impl ExchangeServiceSpot {
     /// False - otherwise.
     pub async fn verify_position(position_opening: &PositionOpening) -> Result<(), AppError> {
         // Make sure the percentage from deposit is not greater than maximum allowed risk per spot trade.
-        if position_opening.percentage_from_deposit > MAX_SPOT_POSITION_SIZE_CHANGE
+        if position_opening.percentage_from_deposit > MAX_SPOT_POSITION_SIZE_PURCHASE
             || position_opening.percentage_from_deposit < dec!(0.0)
         {
             // It is not safe to get into such a position.
             return Err(AppError::new(format!(
                 "The percentage from deposit must be between 0% and {}%",
-                MAX_SPOT_POSITION_SIZE_CHANGE
+                MAX_SPOT_POSITION_SIZE_PURCHASE
             )));
         } // end if
 
