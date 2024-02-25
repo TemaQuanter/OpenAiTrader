@@ -33,7 +33,7 @@ training_file = file_upload_response.id
 
 # Create a fine-tuning job.
 fine_tuning_job_response = client.fine_tuning.jobs.create(
-    training_file=training_file, model="ft:gpt-3.5-turbo-1106:artem-mikheev::8u62e45R")
+    training_file=training_file, model="ft:gpt-3.5-turbo-1106:artem-mikheev::8uPqhQeE")
 
 # Display information about fine-tuning job.
 print(fine_tuning_job_response)

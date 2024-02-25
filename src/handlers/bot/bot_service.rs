@@ -2464,7 +2464,9 @@ impl BotService {
             // Display banned users (10 per message).
             if idx % 10 == 0 && idx > 0 {
                 // Send a message to the user.
-                bot.send_message(msg.chat.id, &reply).await?;
+                bot.send_message(msg.chat.id, &reply)
+                    .parse_mode(ParseMode::Html)
+                    .await?;
 
                 // Reset reply message.
                 reply = list_header.clone();

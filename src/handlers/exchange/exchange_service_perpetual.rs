@@ -1188,7 +1188,6 @@ impl ExchangeServicePerpetual {
         for opened_order in opened_orders {
             // Check if the current opened order is the order to close.
             if opened_order.ticker == order_removal.ticker
-                && opened_order.side == order_removal.direction
                 && opened_order.trigger_price == trigger_price_string
             {
                 // It is the order to close.
