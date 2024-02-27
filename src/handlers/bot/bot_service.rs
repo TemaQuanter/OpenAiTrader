@@ -1105,15 +1105,12 @@ impl BotService {
                     } // end Err
                 }; // end match
 
-                bot.send_message(
-                    msg.chat.id,
-                    format!(
-                        "🔑  Exchange API key is set to <b>{}</b>",
-                        registered_user.exchange_api_key.unwrap_or_default()
-                    ),
-                )
-                .parse_mode(ParseMode::Html)
-                .await?;
+                // Remove the message with sensitive information.
+                bot.delete_message(msg.chat.id, msg.id).await?;
+
+                bot.send_message(msg.chat.id, format!("🔑  Exchange API key is set!"))
+                    .parse_mode(ParseMode::Html)
+                    .await?;
             } // end Command::SetExchangeApiKey
             UserCommands::SetExchangeApiSecret(exchange_api_secret) => {
                 // Verify the user.
@@ -1169,15 +1166,12 @@ impl BotService {
                     } // end Err
                 }; // end match
 
-                bot.send_message(
-                    msg.chat.id,
-                    format!(
-                        "㊙️  Exchange API secret is set to <b>{}</b>",
-                        registered_user.exchange_api_secret.unwrap_or_default()
-                    ),
-                )
-                .parse_mode(ParseMode::Html)
-                .await?;
+                // Remove the message with sensitive information.
+                bot.delete_message(msg.chat.id, msg.id).await?;
+
+                bot.send_message(msg.chat.id, format!("㊙️  Exchange API secret is set!"))
+                    .parse_mode(ParseMode::Html)
+                    .await?;
             } // end Command::SetExchangeApiSecret
             UserCommands::SetIsActive(bot_active) => {
                 // Verify the user.

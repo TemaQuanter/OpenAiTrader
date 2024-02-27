@@ -269,9 +269,6 @@ impl ExchangeServicePerpetual {
         position_opening: Arc<PositionOpening>,
         user: User,
     ) -> Result<(), AppError> {
-        // Get a cloned user for partial take profits.
-        let cloned_user = user.clone();
-
         // Get user credentials.
         let api_key = user.exchange_api_key.unwrap();
         let api_secret = user.exchange_api_secret.unwrap();
@@ -472,7 +469,7 @@ impl ExchangeServicePerpetual {
         let leverage = if stop_loss_percentage < dec!(6.0) {
             // Very short stop - use huge leverage.
             dec!(10.0)
-        } else if stop_loss_percentage > dec!(20.0) {
+        } else if stop_loss_percentage > dec!(17.0) {
             // Very long stop - calculate the closest safe leverage.
             Decimal::floor(&(dec!(100.0) / stop_loss_percentage - dec!(0.3)))
         } else {
@@ -631,14 +628,12 @@ impl ExchangeServicePerpetual {
         // Setup a grid of smaller take profits on the way to the main goal.
         for _ in 0..number_take_profits.to_string().parse::<f64>().unwrap() as i32 {
             // Set a new conditional order with take profit.
-            Self::place_partial_take_profit_order(
-                Arc::new(TakeProfitPlacement {
-                    ticker: position_opening.ticker.clone(),
-                    direction: position_opening.direction.clone(),
-                    take_profit_price: cur_price,
-                    take_profit_percentage: dec!(100) / (number_take_profits + dec!(1)),
-                }),
-                cloned_user.clone(),
+            Self::set_take_profit_from_function(
+                &client,
+                &position_opening.ticker,
+                &position_opening.direction,
+                cur_price.to_string(),
+                partial_qty.to_string(),
             )
             .await?;
 
@@ -1330,4 +1325,47 @@ impl ExchangeServicePerpetual {
 
         ExchangeService::validate_exchange_response(&response)
     } // end fn place_partial_take_profit_order
+
+    /// This function places a partial take profit order only sending an order.
+    /// It can be used only inside of functions that have all necessary values calculated.
+    pub async fn set_take_profit_from_function(
+        client: &Client,
+        ticker: &String,
+        position_side: &String,
+        trigger_price: String,
+        qty: String,
+    ) -> Result<(), AppError> {
+        // What position to close (hedge-short/hedge-long).
+        let positions_idx: i32;
+
+        // Determine the values for the order.
+        if position_side == "Buy" {
+            positions_idx = 1;
+        } else if position_side == "Sell" {
+            positions_idx = 2;
+        } else {
+            // It is an invalid position side.
+            return Err(AppError::new("Invalid position side"));
+        } // end if
+
+        // Form a request to place a partial take profit order on perpetual swaps.
+        let post_request = json!({
+            "category": "linear",
+            "symbol": ticker,
+            "takeProfit":  trigger_price,
+            "tpSize": qty.to_string(),
+            "positionIdx": positions_idx,
+            "tpslMode": "Partial",
+        }); // end json!
+
+        // Send a request to place a partial take profit order on perpetual swaps.
+        let response = ExchangeService::send_robust_post_request(
+            client,
+            "/v5/position/trading-stop",
+            &post_request,
+        )
+        .await?;
+
+        ExchangeService::validate_exchange_response(&response)
+    } // end fn set_take_profit_from_function
 } // end impl ExchangeServicePerpetual
