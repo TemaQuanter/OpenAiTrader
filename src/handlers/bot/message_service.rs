@@ -415,6 +415,9 @@ impl MessageService {
             // Safely unwrap the users.
             let users = users.unwrap();
 
+            // Array that stores users and messages that it is necessary to send to them.
+            let mut users_messages: Vec<(i64, String)> = Vec::new();
+
             // Traverse all users and find those, whose API keys are close to expiration date.
             for usr in users {
                 // Make sure that the user has API data.
@@ -445,44 +448,31 @@ impl MessageService {
                 // Check if API key already expired.
                 if deadline_days == 1 {
                     // The API key expired, inform a user about it.
-                    match BotService::inform_client(
-                        &bot,
+                    users_messages.push((
                         usr.telegram_id,
                         format!(
                             "Oops, your API key <b>expires in 1 day!</b>\n\n\
                             I will not be able to trade for you anymore...\n\n\
                             Please, create a new one and then give it to me via dialog or commands",
                         ),
-                    )
-                    .await
-                    {
-                        Ok(()) => (),
-                        Err(error) => {
-                            log::error!("{}", error.to_string());
-                        } // end Err
-                    } // end match
+                    ));
                 } else if deadline_days <= deadline_number_days {
                     // Check if the API key expires soon.
 
                     // The expiration is close, inform the user about it.
-                    match BotService::inform_client(
-                        &bot,
+                    users_messages.push((
                         usr.telegram_id,
                         format!(
                             "Oops, your API key expires in <b>{} days!</b>\n\n\
                             Please, create a new one and then give it to me via dialog or commands",
                             deadline_days
                         ),
-                    )
-                    .await
-                    {
-                        Ok(()) => (),
-                        Err(error) => {
-                            log::error!("{}", error.to_string());
-                        } // end Err
-                    } // end match
+                    ));
                 } // end if
             } // end for
+
+            // Broadcast the messages to the users.
+            BotService::broadcast_messages(bot.to_owned(), users_messages).await;
 
             // The operation went successfully.
             is_success = true;

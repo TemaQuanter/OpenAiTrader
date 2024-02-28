@@ -12,7 +12,10 @@ use diesel::{
 };
 use rust_decimal::Decimal;
 
-use crate::utils::{lazy_static::SUBSCRIPTION_BOT_URL, types_and_constants::PATH_TO_BOT_MANUAL};
+use crate::utils::{
+    lazy_static::SUBSCRIPTION_BOT_URL,
+    types_and_constants::{MAX_BROADCAST_ATTEMPTS, PATH_TO_BOT_MANUAL},
+};
 use serde::{Deserialize, Serialize};
 use teloxide::{
     adaptors::Throttle,
@@ -2639,4 +2642,26 @@ impl BotService {
 
         Ok(true)
     } // end protect_from_self_modification
+
+    /// This function allows to broadcast notifications to users with respect to the telegram limits.
+    pub async fn broadcast_messages(bot: Throttle<Bot>, users_messages: Vec<(i64, String)>) {
+        // Traverse all the messages and send them to the users.
+        for (telegram_id, message) in users_messages {
+            // Send a message to a user.
+            // Make several attempts to inform a client before skipping them.
+            for _ in 0..MAX_BROADCAST_ATTEMPTS {
+                // Try to send a message to the user and get the result.
+                let res = Self::inform_client(&bot, telegram_id, &message).await;
+
+                // Check if the result is success, then get out of the loop.
+                if res.is_ok() {
+                    break;
+                } // end if
+
+                // Otherwise log the error.
+                // Safely unwrap the error before logging.
+                log::error!("{}", res.err().unwrap().to_string());
+            } // end for
+        } // end for
+    } // end broadcast_messages
 } // end impl BotService

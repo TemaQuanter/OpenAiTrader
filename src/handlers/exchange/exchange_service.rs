@@ -198,6 +198,9 @@ impl ExchangeService {
         let mut positive_results = 0;
         let mut negative_results = 0;
 
+        // Array with users and the messages that they need to receive.
+        let mut users_messages: Vec<(i64, String)> = Vec::new();
+
         // Wait for all tasks to complete.
         for tsk in async_tasks {
             // Check if the thread completed successfully.
@@ -219,31 +222,24 @@ impl ExchangeService {
                             error
                         );
 
-                        // Inform the user about failure to execute the order.
-                        let _ = BotService::inform_client(
-                        bot,
-                        tsk.0.telegram_id,
+                        // Add a signal to inform the user about failure to execute the order.
+                        users_messages.push((tsk.0.telegram_id,
                         format!(
                             "🔴 <b>Failed to execute the order on your account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
                             order_description,
                             error
-                        ),
-                    )
-                    .await;
+                        )));
                     } else {
                         // The result was OK.
                         positive_results += 1;
 
-                        // Inform the user about the successful order execution.
-                        let _ = BotService::inform_client(
-                            bot,
-                            tsk.0.telegram_id,
+                        // Add a signal to inform the user about the successful order execution.
+                        users_messages.push((tsk.0.telegram_id,
                             format!(
                                 "🟢 <b>The order is successfully executed on your account:</b>\n\n👉 {}",
                                 order_description
                             ),
-                        )
-                        .await;
+                        ));
                     } // end if
                 } // end Ok
                 Err(error) => {
@@ -258,20 +254,25 @@ impl ExchangeService {
                         error
                     );
 
-                    // Inform the user about failure to execute the order.
-                    let _ = BotService::inform_client(
-                        bot,
-                        tsk.0.telegram_id,
+                    // Add a signal to inform the user about failure to execute the order.
+                    users_messages.push((tsk.0.telegram_id,
                         format!(
                             "🔴 <b>Failed to execute the order on your account:</b>\n\n👉 {}\n\n⚠️ <b>Error:</b> {}",
                             order_description,
                             error
                         ),
-                    )
-                    .await;
+                    ));
                 } // end Err
             } // end match
         } // end for
+
+        // Acquire the bot before creating a separate thread.
+        let bot = bot.to_owned();
+
+        // Run a separate task to broadcast messages to the users.
+        let _ = tokio::spawn(async move {
+            BotService::broadcast_messages(bot, users_messages).await;
+        });
 
         return Ok((
             successful_threads,
