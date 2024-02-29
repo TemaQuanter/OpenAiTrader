@@ -39,3 +39,6 @@ pub const MAX_SPOT_POSITION_SIZE_PURCHASE: Decimal = dec!(3.1);
 
 // Attempts to send a message to a user during broadcasting.
 pub const MAX_BROADCAST_ATTEMPTS: usize = 5;
+
+// Attempts to send a message to ChatGPT.
+pub const MAX_CHAT_GPT_ATTEMPTS_SEND_REQUEST: usize = 3;

@@ -2649,7 +2649,7 @@ impl BotService {
         for (telegram_id, message) in users_messages {
             // Send a message to a user.
             // Make several attempts to inform a client before skipping them.
-            for _ in 0..MAX_BROADCAST_ATTEMPTS {
+            for i in 0..MAX_BROADCAST_ATTEMPTS {
                 // Try to send a message to the user and get the result.
                 let res = Self::inform_client(&bot, telegram_id, &message).await;
 
@@ -2661,6 +2661,15 @@ impl BotService {
                 // Otherwise log the error.
                 // Safely unwrap the error before logging.
                 log::error!("{}", res.err().unwrap().to_string());
+
+                // Check if it was the last attempt to broadcast a message to the user,
+                // then get out of the loop.
+                if i == MAX_BROADCAST_ATTEMPTS - 1 {
+                    break;
+                } // end if
+
+                // Wait for some time before making the next attempt.
+                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
             } // end for
         } // end for
     } // end broadcast_messages

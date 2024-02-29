@@ -3,7 +3,10 @@
 
 use std::sync::Arc;
 
-use chatgpt::{converse::Conversation, types::ChatMessage};
+use chatgpt::{
+    converse::Conversation,
+    types::{ChatMessage, CompletionResponse},
+};
 use chrono::Utc;
 use diesel::PgConnection;
 use teloxide::{
@@ -23,7 +26,10 @@ use crate::{
             exchange_service_spot::ExchangeServiceSpot,
         },
     },
-    utils::{app_error::AppError, database_service::DatabaseService},
+    utils::{
+        app_error::AppError, database_service::DatabaseService,
+        types_and_constants::MAX_CHAT_GPT_ATTEMPTS_SEND_REQUEST,
+    },
 };
 
 use super::{bot_service::BotState, dto_perpetual, dto_spot};
@@ -106,12 +112,47 @@ impl MessageService {
         // Safely unwrap the legend.
         let trade_legend = trade_legend.unwrap();
 
-        // Feed the message to ChatGPT.
-        let response_chatgpt = chatgpt_conversation
-            .send_message(&trade_legend)
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let mut response_chatgpt: Option<CompletionResponse> = None;
 
+        // Feed the message to ChatGPT.
+        // Try to get the response from ChatGPT.
+        for i in 0..MAX_CHAT_GPT_ATTEMPTS_SEND_REQUEST {
+            // Get the response from ChatGPT.
+            let response = chatgpt_conversation.send_message(&trade_legend).await;
+
+            // Check whether the reply was successful or not.
+            if response.is_ok() {
+                // The reply was successful.
+                response_chatgpt = Some(response.unwrap());
+
+                // Get out of the loop, as the positive response arrived.
+                break;
+            } // end if
+
+            // Log the error.
+            log::error!("{}", response.err().unwrap().to_string());
+
+            // If it was the last attempt, then get out of the loop as well.
+            if i == MAX_CHAT_GPT_ATTEMPTS_SEND_REQUEST - 1 {
+                break;
+            } // end if
+
+            // Wait for some time before making a repeat request.
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        } // end for
+
+        // Check if a positive response arrived.
+        if response_chatgpt.is_none() {
+            // It was impossible to get the response from ChatGPT.
+            return Err(AppError::new(
+                "Impossible to get a positive response from ChatGPT",
+            )); // end return
+        } // end if
+
+        // Safely unwrap the received response.
+        let response_chatgpt = response_chatgpt.unwrap();
+
+        // Retrieve a message from ChatGPT response.
         let chatgpt_message = response_chatgpt.message().content.clone();
 
         // Check whether it is a spot or perpetual signal, then
