@@ -2658,9 +2658,26 @@ impl BotService {
                     break;
                 } // end if
 
-                // Otherwise log the error.
-                // Safely unwrap the error before logging.
-                log::error!("{}", res.err().unwrap().to_string());
+                // Get the error.
+                let req_error = res.err().unwrap();
+
+                // The time to wait before repeating the request.
+                let mut time_to_wait: tokio::time::Duration = tokio::time::Duration::from_secs(1);
+
+                // Handle the error.
+                match req_error {
+                    teloxide::RequestError::RetryAfter(wait_time) => time_to_wait = wait_time,
+                    teloxide::RequestError::Api(api_error) => match api_error {
+                        teloxide::ApiError::BotBlocked => break,
+                        teloxide::ApiError::NotFound => break,
+                        _ => {}
+                    },
+                    _ => {
+                        // Otherwise log the error.
+                        // Safely unwrap the error before logging.
+                        log::error!("{:#?}", req_error.to_string());
+                    }
+                } // end match
 
                 // Check if it was the last attempt to broadcast a message to the user,
                 // then get out of the loop.
@@ -2669,7 +2686,7 @@ impl BotService {
                 } // end if
 
                 // Wait for some time before making the next attempt.
-                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                tokio::time::sleep(time_to_wait).await;
             } // end for
         } // end for
     } // end broadcast_messages
