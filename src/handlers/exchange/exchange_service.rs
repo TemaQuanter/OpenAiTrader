@@ -125,15 +125,13 @@ impl ExchangeService {
 
     /// This function returns total equity of Unified Trading Account in USDT.
     pub async fn get_uta_total_equity(client: &Client) -> Result<Decimal, AppError> {
+        // Form a request to get the information about UTA equity.
+        let get_request = [("accountType", "UNIFIED"), ("coin", "USDT")];
+
         // Get the information about UTA equity.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/account/wallet-balance",
-                Some(&[("accountType", "UNIFIED"), ("coin", "USDT")]),
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        let response: serde_json::Value =
+            Self::send_robust_get_request(client, "/v5/account/wallet-balance", &get_request)
+                .await?;
 
         // Validate exchange response.
         Self::validate_exchange_response(&response)?;
@@ -332,15 +330,12 @@ impl ExchangeService {
 
     /// This function returns the number of remaining days before API key expires.
     pub async fn get_api_deadline_days(client: &Client) -> Result<i32, AppError> {
-        // Get the information about UTA equity.
-        let response: serde_json::Value = client
-            .get(
-                "/v5/user/query-api",
-                Option::<&[()]>::None,
-                [BybitOption::HttpAuth(BybitHttpAuth::V3AndAbove)],
-            )
-            .await
-            .map_err(|error| AppError::new(error.to_string()))?;
+        // Form a request to get the information about API key deadline.
+        let get_request = [("", "")];
+
+        // Get the information about API key deadline.
+        let response: serde_json::Value =
+            Self::send_robust_get_request(client, "/v5/user/query-api", &get_request).await?;
 
         // Validate exchange response.
         Self::validate_exchange_response(&response)?;

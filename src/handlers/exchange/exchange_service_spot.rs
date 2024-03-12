@@ -1019,6 +1019,31 @@ impl ExchangeServiceSpot {
         // If the order already exists, safely unwrap the order.
         let cur_order = cur_order.unwrap();
 
+        // Check if the quantity of the stop loss did not change and the new stop is absent,
+        // then it is likely that it is necessary to remove the order.
+        if cur_order.qty == qty && stop_loss_adjustment.new_stop.is_none() {
+            // Remove the stop loss order.
+
+            // Form a request to cancel an order on spot.
+            let post_request = json!({
+                "category": "spot",
+                "symbol": cur_order.ticker,
+                "orderId": cur_order.order_id
+            }); // end json!
+
+            // Send a request to cancel an order on spot.
+            let response = ExchangeService::send_robust_post_request(
+                &client,
+                "/v5/order/cancel",
+                &post_request,
+            )
+            .await?;
+
+            return ExchangeService::validate_exchange_response(&response);
+        } // end if
+
+        // Amend the existing stop loss order.
+
         let mut post_request = json!({
             "category": "spot",
             "symbol": stop_loss_adjustment.ticker,
