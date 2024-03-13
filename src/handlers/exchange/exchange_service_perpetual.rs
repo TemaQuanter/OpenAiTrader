@@ -508,8 +508,23 @@ impl ExchangeServicePerpetual {
                 serde_json::Value::Null
             } else {
                 // It is a conditional order.
-                // The parameter is required.
-                serde_json::Value::String(trigger_direction.unwrap().to_string())
+                // This parameter is required.
+
+                // Trigger price must be set.
+                let trigger_price = trigger_price.unwrap();
+
+                // Check whether the current asset price is higher or lower than the trigger price and
+                // what is the position direction.
+                if trigger_price < cur_market_price && position_opening.direction == "Buy" {
+                    // Set a trigger for a price to fall to it.
+                    serde_json::Value::String("2".to_string())
+                } else if trigger_price > cur_market_price && position_opening.direction == "Sell" {
+                    // Set a trigger for a price to rise to it.
+                    serde_json::Value::String("1".to_string())
+                } else {
+                    // Set a trigger as it was set by default.
+                    serde_json::Value::String(trigger_direction.unwrap().to_string())
+                } // end if
             }, // end if
             // Required for conditional orders.
             "triggerPrice": if trigger_price.is_none() {
