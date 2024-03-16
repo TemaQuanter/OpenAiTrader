@@ -460,16 +460,19 @@ impl MessageService {
             let mut users_messages: Vec<(i64, String)> = Vec::new();
 
             // Traverse all users and find those, whose API keys are close to expiration date.
-            for usr in users {
+            for mut usr in users {
                 // Make sure that the user has API data.
-                if usr.exchange_api_key.is_none() || usr.exchange_api_secret.is_none() {
+                if usr.exchange_api_key.is_none()
+                    || usr.exchange_api_secret.is_none()
+                    || !usr.exchange_api_data_validated
+                {
                     // The user does not have API data provided.
                     continue;
                 } // end if
 
                 // Safely extract the API credentials.
-                let api_key = usr.exchange_api_key.unwrap();
-                let api_secret = usr.exchange_api_secret.unwrap();
+                let api_key = usr.exchange_api_key.clone().unwrap();
+                let api_secret = usr.exchange_api_secret.clone().unwrap();
 
                 // Get user's exchange client.
                 let client = ExchangeService::get_client(api_key, api_secret);
@@ -482,9 +485,22 @@ impl MessageService {
                         // exchange. Skip them.
                         log::error!("{}", error.to_string());
 
+                        // Set the API data as not valid.
+                        usr.exchange_api_data_validated = false;
+
+                        // The API data in unreachable, which implies that API data is likely to expire.
+                        // Store this information in the database.
+                        let res = db_objects::user_model::User::update(&usr, conn);
+
+                        // Check if the operation was successful.
+                        if res.is_err() {
+                            // An error occurred while database command execution.
+                            log::error!("{}", res.err().unwrap().to_string());
+                        } // end if
+
                         continue;
                     } // end Err
-                };
+                }; // end match
 
                 // Check if API key already expired.
                 if deadline_days == 1 {

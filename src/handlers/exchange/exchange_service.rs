@@ -53,25 +53,28 @@ impl ExchangeService {
         } // end if
 
         // Check if the user provided their exchange credentials.
-        if candidate.exchange_api_key.is_none() || candidate.exchange_api_secret.is_none() {
+        if candidate.exchange_api_key.is_none()
+            || candidate.exchange_api_secret.is_none()
+            || !candidate.exchange_api_data_validated
+        {
             return false;
         } // end if
 
         // Get candidate's credentials.
-        let exchange_api_key = candidate.exchange_api_key.clone().unwrap();
-        let exchange_api_secret = candidate.exchange_api_secret.clone().unwrap();
+        // let exchange_api_key = candidate.exchange_api_key.clone().unwrap();
+        // let exchange_api_secret = candidate.exchange_api_secret.clone().unwrap();
 
         // Check if the user's account is reachable.
-        let client = Self::get_client(exchange_api_key, exchange_api_secret);
+        // let client = Self::get_client(exchange_api_key, exchange_api_secret);
 
         // Try to get the candidate's balance.
-        let _balance = match Self::get_uta_total_equity(&client).await {
-            Ok(balance) => balance,
-            Err(_error) => {
-                // The candidate's account is unreachable.
-                return false;
-            }
-        };
+        // let _balance = match Self::get_uta_total_equity(&client).await {
+        //     Ok(balance) => balance,
+        //     Err(_error) => {
+        //         // The candidate's account is unreachable.
+        //         return false;
+        //     }
+        // };
 
         // Check if their balance is over some minimum limit.
         // if balance < dec!(500) {

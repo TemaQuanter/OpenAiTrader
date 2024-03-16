@@ -47,7 +47,7 @@ use super::message_service::MessageService;
 /// This structure is necessary to make initial setup for
 /// user account in the trading bot.
 #[derive(Clone, Default, PartialEq)]
-pub enum SetupDialogState {
+pub enum DialogState {
     #[default]
     Start,
     ReceiveDeposit,
@@ -69,7 +69,9 @@ pub enum SetupDialogState {
         exchange_api_key: String,
         exchange_api_secret: String,
     },
-} // end SetupDialogState
+    // Superuser dialog states.
+    Broadcast,
+} // end DialogState
 
 // Messages to request the user data in the dialog.
 // They are necessary to skip the steps in the setup dialog.
@@ -92,7 +94,7 @@ start managing your assets right now!\n";
 /// handler.
 #[derive(Clone)]
 pub struct BotState {
-    pub user_dialog_states: Arc<Mutex<HashMap<i64, SetupDialogState>>>,
+    pub user_dialog_states: Arc<Mutex<HashMap<i64, DialogState>>>,
     /// Database connection pool.
     pub pg_connection_pool: Arc<Pool<ConnectionManager<PgConnection>>>,
     /// ChatGPT conversation for perpetual swaps trading.
@@ -183,6 +185,8 @@ enum SuperuserCommands {
     MakeSuperuser(i64),
     #[command(description = "get superusers")]
     GetSuperusers,
+    #[command(description = "broadcast a message to all users")]
+    Broadcast,
 } // end enum SuperuserCommands
 
 /// Data structure to parse command example.
@@ -256,7 +260,7 @@ impl BotService {
                     .filter_command::<SuperuserCommands>()
                     .endpoint(Self::handle_superuser_command),
             )
-            .branch(dptree::entry().endpoint(Self::handle_setup_dialog)); // end Update::filter_message()
+            .branch(dptree::entry().endpoint(Self::handle_dialog)); // end Update::filter_message()
 
         // A handler that handles callback queries.
         let callback_query_handler = Update::filter_callback_query()
@@ -347,7 +351,7 @@ impl BotService {
 
     /// This function handles initial dialog that helps a user to set up everything
     /// required for automated trading.
-    async fn handle_setup_dialog(
+    async fn handle_dialog(
         bot_state: BotState,
         bot: Throttle<Bot>,
         msg: Message,
@@ -385,13 +389,13 @@ impl BotService {
         // Handle dialog message.
         match user_state {
             // Handle the default state of the dialog.
-            SetupDialogState::Start => {
+            DialogState::Start => {
                 // If the user dialog state is Start, then do nothing
                 // (This is handled by /start command).
                 return Ok(());
-            } // end SetupDialogState::Start
+            } // end DialogState::Start
             // Get the deposit from the user.
-            SetupDialogState::ReceiveDeposit => {
+            DialogState::ReceiveDeposit => {
                 // Get the deposit from the user.
                 let amount_raw = msg.text().unwrap_or_default();
 
@@ -409,7 +413,7 @@ impl BotService {
                     // Change the state of the dialog.
                     bot_state.user_dialog_states.lock().await.insert(
                         user.id.0 as i64,
-                        SetupDialogState::ReceiveRisk { deposit: amount },
+                        DialogState::ReceiveRisk { deposit: amount },
                     );
 
                     // Ask a user to send the risk.
@@ -426,8 +430,8 @@ impl BotService {
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } // end if
-            } // end SetupDialogState::ReceiveDeposit
-            SetupDialogState::ReceiveRisk { deposit } => {
+            } // end DialogState::ReceiveDeposit
+            DialogState::ReceiveRisk { deposit } => {
                 // Get the deposit from the user.
                 let risk_raw = msg.text().unwrap_or_default();
 
@@ -445,7 +449,7 @@ impl BotService {
                     // Change the state of the dialog.
                     bot_state.user_dialog_states.lock().await.insert(
                         user.id.0 as i64,
-                        SetupDialogState::ReceiveApiExchangeKey { deposit, risk },
+                        DialogState::ReceiveApiExchangeKey { deposit, risk },
                     );
 
                     // Ask a user to send the exchange API key.
@@ -462,8 +466,8 @@ impl BotService {
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } // end if
-            } // end SetupDialogState::ReceiveRisk
-            SetupDialogState::ReceiveApiExchangeKey { deposit, risk } => {
+            } // end DialogState::ReceiveRisk
+            DialogState::ReceiveApiExchangeKey { deposit, risk } => {
                 // Get the deposit from the user.
                 let exchange_api_key = msg.text().unwrap_or_default().to_string();
 
@@ -481,7 +485,7 @@ impl BotService {
                     // Change the state of the dialog.
                     bot_state.user_dialog_states.lock().await.insert(
                         user.id.0 as i64,
-                        SetupDialogState::ReceiveApiExchangeSecret {
+                        DialogState::ReceiveApiExchangeSecret {
                             deposit,
                             risk,
                             exchange_api_key,
@@ -502,8 +506,8 @@ impl BotService {
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } // end if
-            } // end SetupDialogState::ReceiveExchangeApiKey
-            SetupDialogState::ReceiveApiExchangeSecret {
+            } // end DialogState::ReceiveExchangeApiKey
+            DialogState::ReceiveApiExchangeSecret {
                 deposit,
                 risk,
                 exchange_api_key,
@@ -568,7 +572,7 @@ impl BotService {
                             // Set the dialog state back to receiving API key.
                             bot_state.user_dialog_states.lock().await.insert(
                                 user.id.0 as i64,
-                                SetupDialogState::ReceiveApiExchangeKey { deposit, risk },
+                                DialogState::ReceiveApiExchangeKey { deposit, risk },
                             );
 
                             return Ok(());
@@ -578,7 +582,7 @@ impl BotService {
                     // Change the state of the dialog.
                     bot_state.user_dialog_states.lock().await.insert(
                         user.id.0 as i64,
-                        SetupDialogState::ReceiveBotAllowedToTrade {
+                        DialogState::ReceiveBotAllowedToTrade {
                             deposit,
                             risk,
                             exchange_api_key,
@@ -603,8 +607,8 @@ impl BotService {
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } // end if
-            } // end SetupDialogState::ReceiveExchangeApiSecret
-            SetupDialogState::ReceiveBotAllowedToTrade {
+            } // end DialogState::ReceiveExchangeApiSecret
+            DialogState::ReceiveBotAllowedToTrade {
                 deposit: _,
                 risk: _,
                 exchange_api_key: _,
@@ -650,11 +654,95 @@ impl BotService {
 
                 // Congratulate and guide the user.
                 Self::congratulate_and_guide_user(bot, msg, bot_state).await?;
-            } // end SetupDialogState::ReceiveBotAllowedToTrade
+            } // end DialogState::ReceiveBotAllowedToTrade
+            DialogState::Broadcast => {
+                // This is the message that it is required to broadcast.
+
+                // The message that it is necessary to broadcast.
+                let broadcast_message = msg.text().unwrap_or("");
+
+                // Make sure that the length of the message is at least 1 symbol.
+                if broadcast_message.chars().count() == 0 {
+                    // It is impossible to broadcast such message.
+                    bot.send_message(
+                        msg.chat.id,
+                        "It is impossible to broadcast an empty message, please send a new message",
+                    )
+                    .await?;
+
+                    // Await a new message to broadcast.
+                    return Ok(());
+                } // end if
+
+                // Get a connection to the database.
+                let conn = &mut match DatabaseService::get_pool_connection(
+                    &bot_state.pg_connection_pool,
+                ) {
+                    Ok(conn) => conn,
+                    Err(error) => {
+                        // An error occurred while trying to connect to the database.
+                        log::error!("{}", error);
+
+                        // Inform the user that there was an error while connecting to the database.
+                        bot.send_message(msg.chat.id, ERROR_MESSAGE).await?;
+
+                        // Terminate function execution.
+                        return Ok(());
+                    } // end Err
+                }; // end match
+
+                // Get all approved users.
+                let approved_users = User::get_users_with_status(&StatusId::Approved, conn);
+
+                // Make sure that the users were retrieved successfully.
+                if approved_users.is_err() {
+                    // An error occurred while retrieving the users from the database.
+                    log::error!("{}", approved_users.err().unwrap().to_string());
+
+                    // Inform the user about the error.
+                    bot.send_message(msg.chat.id, ERROR_MESSAGE).await?;
+
+                    // Terminate function execution.
+                    return Ok(());
+                } // end if
+
+                // Remove the user from the state.
+                bot_state
+                    .user_dialog_states
+                    .lock()
+                    .await
+                    .remove(&(user.id.0 as i64));
+
+                // Inform the user that the message is being broadcasted.
+                bot.send_message(msg.chat.id, "The message is being broadcasted...")
+                    .await?;
+
+                // Safely unwrap the retrieved users.
+                let approved_users = approved_users.unwrap();
+
+                // A mapping of users with messages to broadcast.
+                let mut users_messages: Vec<(i64, String)> = Vec::new();
+
+                // Create a mapping of users and messages to broadcast.
+                for approved_user in approved_users {
+                    // Check that the user is not the sender of the message.
+                    if approved_user.telegram_id != user.id.0 as i64 {
+                        users_messages
+                            .push((approved_user.telegram_id, broadcast_message.to_string()));
+                    } // end if
+                } // end for
+
+                // Broadcast the message to all users.
+                Self::broadcast_messages(bot.clone(), users_messages).await;
+
+                // Inform the user that the message was broadcasted.
+                bot.send_message(msg.chat.id, "The message was broadcasted")
+                    .await?;
+            } // end DialogState::Broadcast
         } // end match
 
         return Ok(());
-    } // end fn handle_setup_dialog
+    } // end fn handle_dialog
 
     /// This function is a handler for bot commands sent by a general user or higher.
     async fn handle_user_command(
@@ -762,7 +850,7 @@ impl BotService {
                         .user_dialog_states
                         .lock()
                         .await
-                        .insert(user.id.0 as i64, SetupDialogState::ReceiveDeposit);
+                        .insert(user.id.0 as i64, DialogState::ReceiveDeposit);
 
                     // Ask the user the first question.
                     // Query the deposit.
@@ -856,38 +944,38 @@ impl BotService {
 
                 // Get the next step in a dialog.
                 let next_step = match cur_dialog_state {
-                    SetupDialogState::Start => SetupDialogState::Start,
-                    SetupDialogState::ReceiveDeposit => {
+                    DialogState::Start => DialogState::Start,
+                    DialogState::ReceiveDeposit => {
                         // Prompt a user for risk.
                         bot.send_message(msg.chat.id, MESSAGE_REQUEST_RISK)
                             .parse_mode(ParseMode::Html)
                             .await?;
-                        SetupDialogState::ReceiveRisk {
+                        DialogState::ReceiveRisk {
                             deposit: Default::default(),
                         }
-                    } // end SetupDialogState::ReceiveDeposit
-                    SetupDialogState::ReceiveRisk { deposit } => {
+                    } // end DialogState::ReceiveDeposit
+                    DialogState::ReceiveRisk { deposit } => {
                         // Prompt a user for API key.
                         bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_KEY)
                             .parse_mode(ParseMode::Html)
                             .await?;
-                        SetupDialogState::ReceiveApiExchangeKey {
+                        DialogState::ReceiveApiExchangeKey {
                             deposit,
                             risk: Default::default(),
                         }
-                    } // end SetupDialogState::ReceiveRisk
-                    SetupDialogState::ReceiveApiExchangeKey { deposit, risk } => {
+                    } // end DialogState::ReceiveRisk
+                    DialogState::ReceiveApiExchangeKey { deposit, risk } => {
                         // Prompt a user for API secret.
                         bot.send_message(msg.chat.id, MESSAGE_REQUEST_API_SECRET)
                             .parse_mode(ParseMode::Html)
                             .await?;
-                        SetupDialogState::ReceiveApiExchangeSecret {
+                        DialogState::ReceiveApiExchangeSecret {
                             deposit,
                             risk,
                             exchange_api_key: Default::default(),
                         }
-                    } // end SetupDialogState::ReceiveApiExchangeKey
-                    SetupDialogState::ReceiveApiExchangeSecret {
+                    } // end DialogState::ReceiveApiExchangeKey
+                    DialogState::ReceiveApiExchangeSecret {
                         deposit,
                         risk,
                         exchange_api_key,
@@ -900,14 +988,14 @@ impl BotService {
                                 vec![KeyboardButton::new("No, not right now")],
                             ]))
                             .await?;
-                        SetupDialogState::ReceiveBotAllowedToTrade {
+                        DialogState::ReceiveBotAllowedToTrade {
                             deposit,
                             risk,
                             exchange_api_key,
                             exchange_api_secret: Default::default(),
                         }
-                    } // end SetupDialogState::ReceiveApiExchangeSecret
-                    SetupDialogState::ReceiveBotAllowedToTrade {
+                    } // end DialogState::ReceiveApiExchangeSecret
+                    DialogState::ReceiveBotAllowedToTrade {
                         deposit: _,
                         risk: _,
                         exchange_api_key: _,
@@ -916,8 +1004,13 @@ impl BotService {
                         // Congratulate the user with the end of account setup.
                         Self::congratulate_and_guide_user(bot, msg.clone(), bot_state.clone())
                             .await?;
-                        SetupDialogState::Start
-                    } // end SetupDialogState::ReceiveBotAllowedToTrade
+                        DialogState::Start
+                    } // end DialogState::ReceiveBotAllowedToTrade
+                    DialogState::Broadcast => {
+                        // This is a superuser state that allows to broadcast
+                        // a message to all approve users.
+                        DialogState::Start
+                    } // end DialogState::Broadcast
                 }; // end match
 
                 // Lock the mutex on dialog states.
@@ -925,7 +1018,7 @@ impl BotService {
 
                 // If the next step is starting step, then remove the dialog state.
                 // Otherwise, update the dialog state.
-                if next_step == SetupDialogState::Start {
+                if next_step == DialogState::Start {
                     dialog_states.remove(&(user.id.0 as i64));
                 } else {
                     dialog_states.insert(user.id.0 as i64, next_step);
@@ -2128,6 +2221,20 @@ impl BotService {
             SuperuserCommands::GetSuperusers => {
                 Self::display_users_by_role(&bot, &msg, RoleId::Superuser, conn).await?;
             } // end SuperuserCommands::GetSuperusers
+            SuperuserCommands::Broadcast => {
+                // Broadcast a message to all approved users.
+
+                // Add a user to the broadcast dialog state.
+                bot_state
+                    .user_dialog_states
+                    .lock()
+                    .await
+                    .insert(registered_user.telegram_id, DialogState::Broadcast);
+
+                // Request a message to broadcast.
+                bot.send_message(msg.chat.id, "Ok, send me a message to broadcast")
+                    .await?;
+            } // end SuperuserCommands::Broadcast
         } // end match
 
         Ok(())
@@ -2670,7 +2777,15 @@ impl BotService {
                     teloxide::RequestError::Api(api_error) => match api_error {
                         teloxide::ApiError::BotBlocked => break,
                         teloxide::ApiError::NotFound => break,
-                        _ => {}
+                        teloxide::ApiError::ChatNotFound => break,
+                        teloxide::ApiError::BotKicked => break,
+                        teloxide::ApiError::CantInitiateConversation => break,
+                        teloxide::ApiError::MessageIsTooLong => break,
+                        _ => {
+                            // Otherwise log the error.
+                            // Safely unwrap the error before logging.
+                            log::error!("{:#?}", api_error.to_string());
+                        }
                     },
                     _ => {
                         // Otherwise log the error.
