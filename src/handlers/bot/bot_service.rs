@@ -1056,10 +1056,12 @@ impl BotService {
                 // Safely unwrap the manual.
                 let manual = manual.unwrap();
 
-                // Send the help instructions to the user.
-                bot.send_message(msg.chat.id, manual)
-                    .parse_mode(ParseMode::Html)
-                    .await?;
+                // Send the help instructions to the user, depending on their role.
+                for cur_manual in manual {
+                    bot.send_message(msg.chat.id, cur_manual)
+                        .parse_mode(ParseMode::Html)
+                        .await?;
+                } // end for
             } // end UserCommands::Help
             UserCommands::SetDeposit(amount) => {
                 // Verify the user.
@@ -2596,42 +2598,60 @@ impl BotService {
 
     /// This function assembles and returns a user manual on
     /// how to use the bot, taking into account the user role in the system.
-    fn assemble_user_manual(role_id: RoleId) -> Result<String, std::io::Error> {
+    fn assemble_user_manual(role_id: RoleId) -> Result<Vec<String>, std::io::Error> {
         // Load the raw data from a manual JSON file.
         let raw_manual = std::fs::read_to_string(PATH_TO_BOT_MANUAL)?;
 
         // Deserialize the JSON data
         let commands: Commands = serde_json::from_str(&raw_manual)?;
 
-        // A returned manual.
-        let mut manual = String::from("<b>These commands are supported:</b>\n\n");
+        // Returned manual.
+        let mut manual: Vec<String> = Vec::new();
+
+        // The current manual.
+        let mut cur_manual = String::from("<b>These commands are supported:</b>\n\n");
 
         // Assemble commands for a regular user.
         for command in commands.user {
-            manual += &Self::get_command_description(command);
+            cur_manual += &Self::get_command_description(command);
         } // end for
+
+        // Set up the first message containing only user commands.
+        manual.push(cur_manual);
+
+        // Reset the current manual.
+        cur_manual = String::new();
 
         // If user's rank is higher or equal to admin, then add some more
         // instructions.
         if role_id == RoleId::Admin || role_id == RoleId::Superuser {
-            manual += "<b>These commands are supported for admins:</b>\n\n";
+            cur_manual += "<b>These commands are supported for admins:</b>\n\n";
 
             // Assemble commands for a admin user.
             for command in commands.admin {
-                manual += &Self::get_command_description(command);
+                cur_manual += &Self::get_command_description(command);
             } // end for
         } // end if
+
+        // Set up the second message containing only admin commands.
+        manual.push(cur_manual);
+
+        // Reset the current manual.
+        cur_manual = String::new();
 
         // If user's rank is higher or equal to superuser, then add some more
         // instructions.
         if role_id == RoleId::Admin || role_id == RoleId::Superuser {
-            manual += "<b>These commands are supported for superusers:</b>\n\n";
+            cur_manual += "<b>These commands are supported for superusers:</b>\n\n";
 
             // Assemble commands for a superuser user.
             for command in commands.superuser {
-                manual += &Self::get_command_description(command);
+                cur_manual += &Self::get_command_description(command);
             } // end for
         } // end if
+
+        // Set up the third message containing only superuser commands.
+        manual.push(cur_manual);
 
         Ok(manual)
     } // end fn assemble_user_manual
