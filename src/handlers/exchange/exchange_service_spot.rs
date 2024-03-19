@@ -360,30 +360,30 @@ impl ExchangeServiceSpot {
         }; // end match
 
         // Check if it is a market order.
-        if position_opening.order_type == "market" {
-            // Get a coin from the ticker.
-            let coin = match position_opening.ticker.strip_suffix("USDT") {
-                Some(coin) => coin,
-                None => {
-                    return Err(AppError::new("Wrong ticker provided."));
-                } // end None
-            }; // end match
+        // if position_opening.order_type == "market" {
+        //     // Get a coin from the ticker.
+        //     let coin = match position_opening.ticker.strip_suffix("USDT") {
+        //         Some(coin) => coin,
+        //         None => {
+        //             return Err(AppError::new("Wrong ticker provided."));
+        //         } // end None
+        //     }; // end match
 
-            // Get all positions currently opened for a user.
-            let opened_position = Self::get_opened_position(&client, coin).await?;
+        //     // Get all positions currently opened for a user.
+        //     let opened_position = Self::get_opened_position(&client, coin).await?;
 
-            // Check if the current position is the position the function
-            // is trying to open.
-            // The second condition deals with a bias, when it was impossible
-            // to sell all coins and there is a tiny remainder.
-            if opened_position.coin == coin
-                && cur_coin_price * opened_position.wallet_balance > SPOT_OPENED_POSITION_BIAS_VALUE
-            {
-                // This is a position that the function is trying to open.
-                // Stop the function execution.
-                return Err(AppError::new("The position is already opened"));
-            } // end if
-        } // end if
+        //     // Check if the current position is the position the function
+        //     // is trying to open.
+        //     // The second condition deals with a bias, when it was impossible
+        //     // to sell all coins and there is a tiny remainder.
+        //     if opened_position.coin == coin
+        //         && cur_coin_price * opened_position.wallet_balance > SPOT_OPENED_POSITION_BIAS_VALUE
+        //     {
+        //         // This is a position that the function is trying to open.
+        //         // Stop the function execution.
+        //         return Err(AppError::new("The position is already opened"));
+        //     } // end if
+        // } // end if
 
         // Get the current market price of the coin.
         let cur_market_price = Self::get_instrument_ask_price(&client, &position_opening.ticker)
