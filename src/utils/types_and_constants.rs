@@ -31,11 +31,11 @@ pub const NUMBER_ATTEMPTS_SEND_REQUEST: i32 = 5;
 
 // The maximum percentage from deposit that it is allowed to use to
 // sell on spot per trade.
-pub const MAX_SPOT_POSITION_SIZE_SALE: Decimal = dec!(15.1);
+pub const MAX_SPOT_POSITION_SIZE_SALE: Decimal = dec!(20.1);
 
 // The maximum percentage from deposit that it is allowed to use to
 // buy on spot per trade.
-pub const MAX_SPOT_POSITION_SIZE_PURCHASE: Decimal = dec!(5.1);
+pub const MAX_SPOT_POSITION_SIZE_PURCHASE: Decimal = dec!(8.1);
 
 // Attempts to send a message to a user during broadcasting.
 pub const MAX_BROADCAST_ATTEMPTS: usize = 5;

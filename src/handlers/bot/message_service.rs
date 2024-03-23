@@ -27,7 +27,9 @@ use crate::{
         },
     },
     utils::{
-        app_error::AppError, database_service::DatabaseService,
+        app_error::AppError,
+        database_service::DatabaseService,
+        lazy_static::{JOKE_WORDS, SPOT_TRADE_WORDS},
         types_and_constants::MAX_CHAT_GPT_ATTEMPTS_SEND_REQUEST,
     },
 };
@@ -273,6 +275,13 @@ impl MessageService {
         // Get the last message of the trade legend.
         let last_message = trade_legend.first().unwrap();
 
+        // Make sure that neither of the messages is a joke message.
+        if Self::is_joke(first_message) || Self::is_joke(last_message) {
+            // It is likely to be a joke message, so it is better to ignore
+            // the potential signal.
+            return Ok((None, "".to_string()));
+        } // end if
+
         // Separately check whether the last message in the legend is a spot order.
         // Check if the last inserted message is a signal on spot.
         if Self::is_spot_signal(last_message) {
@@ -305,12 +314,35 @@ impl MessageService {
     /// (The role of the function is to eliminate the waste of tokens
     /// on ChatGPT)
     fn is_spot_signal(message: &String) -> bool {
-        if message.contains("спот") || message.contains("spot") {
-            return true;
-        } // end if
+        // Traverse all words that might indicate a call to action on spot.
+        for spot_word in (*SPOT_TRADE_WORDS).iter() {
+            // Check if the message contains a part or the entire word
+            // that might indicate a call to action on spot.
+            if message.contains(spot_word) {
+                // The message is likely to be a call to action message.
+                return true;
+            } // end if
+        } // end for
 
+        // The message is not likely to be a call to action message.
         false
     } // end fn is_spot_signal
+
+    /// This function makes sure that the message is not a joke or sarcasm to
+    /// understand whether or not it is required to follow the instructions in it.
+    fn is_joke(message: &String) -> bool {
+        // Traverse all joke words and make sure that a message does
+        // not contain any of them.
+        for joke_word in (*JOKE_WORDS).iter() {
+            // Check that the message does not contain a particular joke word.
+            if message.contains(joke_word) {
+                return true;
+            } // end if
+        } // end for
+
+        // The message is not likely to be a joke.
+        false
+    } // end fn is_joke
 
     /// This function checks if a message is a signal on perpetual swaps or not
     /// (The role of the function is to eliminate the waste of tokens
