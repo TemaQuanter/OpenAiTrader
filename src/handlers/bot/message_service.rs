@@ -680,8 +680,18 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Open <b>{}</b> position on perpetual swaps for <b>{}</b>",
-                        position_opening.direction, position_opening.ticker
+                        "Open <b>{}</b> position on perpetual swaps for <b>{}</b>\n\n\
+                        ↔️ Range: <b>${}-${}</b>\n\n\
+                        ❌ Stop Loss: <b>${}</b>",
+                        position_opening.direction,
+                        position_opening.ticker,
+                        position_opening
+                            .lower_bound_entry
+                            .min(position_opening.upper_bound_entry),
+                        position_opening
+                            .lower_bound_entry
+                            .max(position_opening.upper_bound_entry),
+                        position_opening.stop_loss
                     ),
                     Arc::new(position_opening),
                     ExchangeServicePerpetual::open_position,
@@ -701,8 +711,10 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Set a take profit for <b>{}</b> on <b>{}</b>",
-                        take_profit_placement.direction, take_profit_placement.ticker
+                        "Set a take profit for <b>{}</b> on <b>{}</b> to <b>${}</b>",
+                        take_profit_placement.direction,
+                        take_profit_placement.ticker,
+                        take_profit_placement.take_profit_price
                     ),
                     Arc::new(take_profit_placement),
                     ExchangeServicePerpetual::place_partial_take_profit_order,
@@ -743,8 +755,8 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Remove order for <b>{}</b> position on <b>{}</b>",
-                        order_removal.direction, order_removal.ticker
+                        "Remove order for <b>{}</b> position on <b>{}</b> at <b>${}</b>",
+                        order_removal.direction, order_removal.ticker, order_removal.trigger_price
                     ),
                     Arc::new(order_removal),
                     ExchangeServicePerpetual::cancel_order,
@@ -787,8 +799,10 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Adjust stop loss for <b>{}</b> position on <b>{}</b>",
-                        stop_loss_adjustment.direction, stop_loss_adjustment.ticker
+                        "Set stop loss for <b>{}</b> position on <b>{}</b> to <b>${}</b>",
+                        stop_loss_adjustment.direction,
+                        stop_loss_adjustment.ticker,
+                        stop_loss_adjustment.new_stop
                     ),
                     Arc::new(stop_loss_adjustment),
                     ExchangeServicePerpetual::adjust_stop_loss,
@@ -844,8 +858,8 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Set a take profit on spot for <b>{}</b>",
-                        take_profit_placement.ticker
+                        "Set a take profit on spot for <b>{}</b> to <b>${}</b>",
+                        take_profit_placement.ticker, take_profit_placement.take_profit_price
                     ),
                     Arc::new(take_profit_placement),
                     ExchangeServiceSpot::place_partial_take_profit_order,
@@ -886,8 +900,8 @@ impl MessageService {
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
                     format!(
-                        "Remover an order on spot for <b>{}</b>",
-                        order_removal.ticker
+                        "Remover an order on spot for <b>{}</b> at <b>${}</b>",
+                        order_removal.ticker, order_removal.trigger_price
                     ),
                     Arc::new(order_removal),
                     ExchangeServiceSpot::cancel_order,
@@ -927,10 +941,20 @@ impl MessageService {
             // Adjust stop loss of a position.
             Self::send_exchange_order_execution_feedback(
                 ExchangeService::execute_exchange_order_for_all_users(
-                    format!(
-                        "Adjust stop loss for <b>{}</b> on spot",
-                        stop_loss_adjustment.ticker
-                    ),
+                    // If there is information about new stop loss, then display it.
+                    if stop_loss_adjustment.new_stop.is_some() {
+                        format!(
+                            "Set stop loss for <b>{}</b> on spot to <b>${}</b>",
+                            stop_loss_adjustment.ticker,
+                            stop_loss_adjustment.new_stop.unwrap()
+                        )
+                    } else {
+                        // Otherwise, there is no additional information.
+                        format!(
+                            "Adjust stop loss for <b>{}</b> on spot",
+                            stop_loss_adjustment.ticker,
+                        )
+                    }, // end if
                     Arc::new(stop_loss_adjustment),
                     ExchangeServiceSpot::adjust_stop_loss,
                     bot_state.clone(),
